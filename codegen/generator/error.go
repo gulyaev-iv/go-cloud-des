@@ -15,8 +15,8 @@ var (
 	ErrUnknownBlockType      = errors.New("unknown block type")
 	ErrUnknownBlockParam     = errors.New("unknown block parameter")
 	ErrUnknownBlockingPolicy = errors.New("unknown blocking policy")
-	ErrMissingClosingBrace   = errors.New("missing closing brace")
 	ErrUnknownReference      = errors.New("unknown reference")
+	ErrInvalidSectionCount   = errors.New("invalid section count")
 )
 
 type ParseErr struct {

@@ -16,6 +16,9 @@ func Parse(data []byte) (*Model, error) {
 	if err != nil {
 		return nil, err
 	}
+	if entityCount < 1 {
+		return nil, parseErr(scanner.LineNum(), ErrInvalidSectionCount, "expected entity count >= 1, got "+strconv.Itoa(entityCount))
+	}
 	model.Entities = make([]*EntityDesc, 0, entityCount)
 	if err := parseEntitySection(scanner, model, entityCount); err != nil {
 		return nil, err
@@ -43,8 +46,17 @@ func Parse(data []byte) (*Model, error) {
 	if err != nil {
 		return nil, err
 	}
+	if blockCount < 2 {
+		return nil, parseErr(scanner.LineNum(), ErrInvalidSectionCount, "expected block count >= 2, got "+strconv.Itoa(blockCount))
+	}
 	model.Blocks = make([]*BlockDesc, 0, blockCount)
-	// parseBlockSection будет следующим шагом
+	// if err := parseBlockSection(scanner, model, blockCount); err != nil {
+	// 	return nil, err
+	// }
+
+	if scanner.ScanNoEmpty() {
+		return nil, parseErr(scanner.LineNum(), ErrIncorrectFormat, "expected EOF")
+	}
 
 	return model, nil
 }
@@ -105,6 +117,9 @@ func parseNonNegativeInt(data []byte) (int, bool) {
 		return 0, false
 	}
 
+	if len(data) > 1 && data[0] == '0' {
+		return 0, false
+	}
 	for _, c := range data {
 		if c < '0' || c > '9' {
 			return 0, false
