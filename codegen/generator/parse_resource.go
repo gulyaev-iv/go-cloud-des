@@ -45,6 +45,9 @@ func parseResource(scanner *LineScanner) (*ResourceDesc, error) {
 			if !hasCapacity {
 				return nil, parseErr(scanner.LineNum(), ErrIncorrectFormat, `missing required resource parameter "capacity"`)
 			}
+			if len(resource.SeizeNames) == 0 {
+				return nil, parseErr(scanner.LineNum(), ErrIncorrectFormat, `missing required resource parameter "seize"`)
+			}
 			return resource, nil
 		}
 
