@@ -50,9 +50,9 @@ func Parse(data []byte) (*Model, error) {
 		return nil, parseErr(scanner.LineNum(), ErrInvalidSectionCount, "expected block count >= 2, got "+strconv.Itoa(blockCount))
 	}
 	model.Blocks = make([]*BlockDesc, 0, blockCount)
-	// if err := parseBlockSection(scanner, model, blockCount); err != nil {
-	// 	return nil, err
-	// }
+	if err := parseBlockSection(scanner, model, blockCount); err != nil {
+		return nil, err
+	}
 
 	if scanner.ScanNoEmpty() {
 		return nil, parseErr(scanner.LineNum(), ErrIncorrectFormat, "expected EOF")
