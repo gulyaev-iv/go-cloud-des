@@ -20,10 +20,6 @@ func parseBlock(scanner *LineScanner) (*BlockDesc, error) {
 	}
 
 	typeToken := scanner.Word()
-	blockType, err := parseBlockType(scanner, typeToken)
-	if err != nil {
-		return nil, err
-	}
 
 	nameToken := scanner.Word()
 	if nameToken == nil {
@@ -41,28 +37,27 @@ func parseBlock(scanner *LineScanner) (*BlockDesc, error) {
 
 	block := &BlockDesc{
 		Name: name,
-		Type: blockType,
 	}
 
-	switch blockType {
-	case BlockCreate:
+	switch string(typeToken) {
+	case "CREATE":
 		block.Params, err = parseCreateParams(scanner)
-	case BlockQueue:
+	case "QUEUE":
 		block.Params, err = parseQueueParams(scanner)
-	case BlockDelay:
+	case "DELAY":
 		block.Params, err = parseDelayParams(scanner)
-	case BlockSeize:
+	case "SEIZE":
 		block.Params, err = parseSeizeParams(scanner)
-	case BlockRelease:
+	case "RELEASE":
 		block.Params, err = parseReleaseParams(scanner)
-	case BlockTerminate:
+	case "TERMINATE":
 		block.Params, err = parseTerminateParams(scanner)
-	// case BlockAssign:
-	// 	block.Params, err = parseAssignParams(scanner)
-	// case BlockBranch:
-	// 	block.Params, err = parseBranchParams(scanner)
+	case "ASSIGN":
+		block.Params, err = parseAssignParams(scanner)
+	case "BRANCH":
+		block.Params, err = parseBranchParams(scanner)
 	default:
-		return nil, parseErr(scanner.LineNum(), ErrUnknownBlockType, "unknown block type")
+		return nil, parseErr(scanner.LineNum(), ErrUnknownBlockType, `unknown block type "`+string(typeToken)+`"`)
 	}
 
 	if err != nil {
@@ -70,29 +65,6 @@ func parseBlock(scanner *LineScanner) (*BlockDesc, error) {
 	}
 
 	return block, nil
-}
-
-func parseBlockType(scanner *LineScanner, token []byte) (BlockType, error) {
-	switch string(token) {
-	case "CREATE":
-		return BlockCreate, nil
-	case "QUEUE":
-		return BlockQueue, nil
-	case "DELAY":
-		return BlockDelay, nil
-	case "SEIZE":
-		return BlockSeize, nil
-	case "RELEASE":
-		return BlockRelease, nil
-	// case "ASSIGN":
-	// 	return BlockAssign, nil
-	// case "BRANCH":
-	// 	return BlockBranch, nil
-	case "TERMINATE":
-		return BlockTerminate, nil
-	default:
-		return 0, parseErr(scanner.LineNum(), ErrUnknownBlockType, `unknown block type "`+string(token)+`"`)
-	}
 }
 
 func readRequiredToken(scanner *LineScanner, param string) ([]byte, error) {
@@ -515,4 +487,232 @@ func parseReleaseParams(scanner *LineScanner) (*ReleaseParams, error) {
 	}
 
 	return nil, parseErr(scanner.LineNum(), ErrUnexpectedEOF, `expected "}" after RELEASE block`)
+}
+
+func parseAssignmentTarget(scanner *LineScanner, target []byte) (AssignmentTarget, error) {
+	target = bytes.TrimSpace(target)
+	if len(target) == 0 {
+		return AssignmentTarget{}, parseErr(scanner.LineNum(), ErrIncorrectFormat, `expected assignment target`)
+	}
+
+	dot := bytes.IndexByte(target, '.')
+	if dot == -1 {
+		name, err := validateName(scanner, target)
+		if err != nil {
+			return AssignmentTarget{}, err
+		}
+
+		return AssignmentTarget{
+			IsEntityField: false,
+			VarName:       name,
+		}, nil
+	}
+
+	if dot == 0 || dot == len(target)-1 {
+		return AssignmentTarget{}, parseErr(scanner.LineNum(), ErrIncorrectFormat, `invalid entity field target "`+string(target)+`"`)
+	}
+
+	if bytes.IndexByte(target[dot+1:], '.') != -1 {
+		return AssignmentTarget{}, parseErr(scanner.LineNum(), ErrIncorrectFormat, `invalid entity field target "`+string(target)+`"`)
+	}
+
+	entityName, err := validateName(scanner, target[:dot])
+	if err != nil {
+		return AssignmentTarget{}, err
+	}
+
+	fieldName, err := validateName(scanner, target[dot+1:])
+	if err != nil {
+		return AssignmentTarget{}, err
+	}
+
+	return AssignmentTarget{
+		IsEntityField: true,
+		EntityName:    entityName,
+		FieldName:     fieldName,
+	}, nil
+}
+
+func parseAssignment(scanner *LineScanner) (Assignment, error) {
+	line := scanner.Line()
+	if len(line) == 0 {
+		return Assignment{}, parseErr(scanner.LineNum(), ErrIncorrectFormat, `expected assignment expression`)
+	}
+
+	eq := bytes.IndexByte(line, '=')
+	if eq == -1 {
+		return Assignment{}, parseErr(scanner.LineNum(), ErrIncorrectFormat, `expected "=" in assignment`)
+	}
+
+	targetRaw := bytes.TrimSpace(line[:eq])
+	exprRaw := bytes.TrimSpace(line[eq+1:])
+
+	if len(exprRaw) == 0 {
+		return Assignment{}, parseErr(scanner.LineNum(), ErrIncorrectFormat, `expected assignment value`)
+	}
+
+	target, err := parseAssignmentTarget(scanner, targetRaw)
+	if err != nil {
+		return Assignment{}, err
+	}
+
+	return Assignment{
+		Target: target,
+		Expr:   Expr(string(exprRaw)),
+	}, nil
+}
+
+func parseAssignParams(scanner *LineScanner) (*AssignParams, error) {
+	params := &AssignParams{
+		Assignments: make([]Assignment, 0),
+	}
+
+	hasNext := false
+
+	for scanner.ScanNoEmpty() {
+		param := scanner.Word()
+
+		if bytes.Equal(param, []byte("}")) {
+			if err := expectNoExtraAfterClosingBrace(scanner); err != nil {
+				return nil, err
+			}
+
+			if !hasNext {
+				return nil, parseErr(scanner.LineNum(), ErrIncorrectFormat, `missing required ASSIGN parameter "next"`)
+			}
+
+			return params, nil
+		}
+
+		switch string(param) {
+		case "set":
+			assignment, err := parseAssignment(scanner)
+			if err != nil {
+				return nil, err
+			}
+
+			params.Assignments = append(params.Assignments, assignment)
+
+		case "next":
+			if err := parseUniqueParam(scanner, &hasNext, &params.NextName, readRequiredName, "ASSIGN", "next"); err != nil {
+				return nil, err
+			}
+
+		default:
+			return nil, parseErr(scanner.LineNum(), ErrUnknownBlockParam, `unknown ASSIGN parameter "`+string(param)+`"`)
+		}
+	}
+
+	return nil, parseErr(scanner.LineNum(), ErrUnexpectedEOF, `expected "}" after ASSIGN block`)
+}
+
+func splitColon(scanner *LineScanner, line []byte) ([]byte, []byte, error) {
+	idx := bytes.IndexByte(line, ':')
+	if idx == -1 {
+		return nil, nil, parseErr(scanner.LineNum(), ErrIncorrectFormat, `expected ":"`)
+	}
+
+	left := bytes.TrimSpace(line[:idx])
+	right := bytes.TrimSpace(line[idx+1:])
+
+	if len(right) == 0 {
+		return nil, nil, parseErr(scanner.LineNum(), ErrIncorrectFormat, `expected block name after ":"`)
+	}
+
+	if bytes.Contains(right, []byte(":")) {
+		return nil, nil, parseErr(scanner.LineNum(), ErrIncorrectFormat, `unexpected second ":"`)
+	}
+
+	return left, right, nil
+}
+
+func parseBranchCase(scanner *LineScanner) (BranchCase, error) {
+	line := scanner.Line()
+	conditionRaw, nextRaw, err := splitColon(scanner, line)
+	if err != nil {
+		return BranchCase{}, err
+	}
+
+	if len(conditionRaw) == 0 {
+		return BranchCase{}, parseErr(scanner.LineNum(), ErrIncorrectFormat, `expected branch condition`)
+	}
+
+	nextName, err := validateName(scanner, nextRaw)
+	if err != nil {
+		return BranchCase{}, err
+	}
+
+	return BranchCase{
+		Condition: Expr(string(conditionRaw)),
+		NextName:  nextName,
+	}, nil
+}
+
+func parseBranchElse(scanner *LineScanner) (string, error) {
+	line := scanner.Line()
+	left, nextRaw, err := splitColon(scanner, line)
+	if err != nil {
+		return "", err
+	}
+
+	if len(left) != 0 {
+		return "", parseErr(scanner.LineNum(), ErrIncorrectFormat, `unexpected condition before else target`)
+	}
+
+	nextName, err := validateName(scanner, nextRaw)
+	if err != nil {
+		return "", err
+	}
+
+	return nextName, nil
+}
+
+func parseBranchParams(scanner *LineScanner) (*BranchParams, error) {
+	params := &BranchParams{
+		Cases: make([]BranchCase, 0),
+	}
+
+	for scanner.ScanNoEmpty() {
+		param := scanner.Word()
+
+		if bytes.Equal(param, []byte("}")) {
+			if err := expectNoExtraAfterClosingBrace(scanner); err != nil {
+				return nil, err
+			}
+
+			if len(params.Cases) == 0 && !params.HasElse {
+				return nil, parseErr(scanner.LineNum(), ErrIncorrectFormat, `missing BRANCH cases`)
+			}
+
+			return params, nil
+		}
+
+		switch string(param) {
+		case "if":
+			branchCase, err := parseBranchCase(scanner)
+			if err != nil {
+				return nil, err
+			}
+
+			params.Cases = append(params.Cases, branchCase)
+
+		case "else":
+			if params.HasElse {
+				return nil, parseErr(scanner.LineNum(), ErrIncorrectFormat, `duplicate BRANCH parameter "else"`)
+			}
+
+			nextName, err := parseBranchElse(scanner)
+			if err != nil {
+				return nil, err
+			}
+
+			params.ElseName = nextName
+			params.HasElse = true
+
+		default:
+			return nil, parseErr(scanner.LineNum(), ErrUnknownBlockParam, `unknown BRANCH parameter "`+string(param)+`"`)
+		}
+	}
+
+	return nil, parseErr(scanner.LineNum(), ErrUnexpectedEOF, `expected "}" after BRANCH block`)
 }

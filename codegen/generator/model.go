@@ -64,20 +64,8 @@ type ResourceDesc struct {
 
 type BlockType uint8
 
-const (
-	BlockCreate BlockType = iota
-	BlockQueue
-	BlockDelay
-	BlockSeize
-	BlockRelease
-	BlockAssign
-	BlockBranch
-	BlockTerminate
-)
-
 type BlockDesc struct {
 	Name string
-	Type BlockType
 
 	Params BlockParams
 }
