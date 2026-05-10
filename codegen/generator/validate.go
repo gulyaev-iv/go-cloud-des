@@ -47,6 +47,10 @@ func ValidateAndLink(model *Model) error {
 		}
 	}
 
+	if err := validateWaitQueueReachability(model); err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -385,5 +389,66 @@ func blockKind(block *BlockDesc) string {
 		return "TERMINATE"
 	default:
 		return "UNKNOWN"
+	}
+}
+
+func validateWaitQueueReachability(model *Model) error {
+	for _, block := range model.Blocks {
+		switch params := block.Params.(type) {
+		case *DelayParams:
+			for _, queue := range params.WaitQueues {
+				if !canReachWaitTarget(queue, block) {
+					return modelErr(ErrIncorrectFormat, `QUEUE block "`+queue.Name+`" from wait_queue cannot reach DELAY block "`+block.Name+`"`)
+				}
+			}
+
+		case *SeizeParams:
+			for _, queue := range params.WaitQueues {
+				if !canReachWaitTarget(queue, block) {
+					return modelErr(ErrIncorrectFormat, `QUEUE block "`+queue.Name+`" from wait_queue cannot reach SEIZE block "`+block.Name+`"`)
+				}
+			}
+		}
+	}
+
+	return nil
+}
+
+func canReachWaitTarget(queue *BlockDesc, target *BlockDesc) bool {
+	queueParams := queue.Params.(*QueueParams)
+
+	visited := make(map[*BlockDesc]struct{})
+	return canReachWaitTargetFrom(queueParams.Next, target, visited)
+}
+
+func canReachWaitTargetFrom(current *BlockDesc, target *BlockDesc, visited map[*BlockDesc]struct{}) bool {
+	if current == target {
+		return true
+	}
+
+	if _, ok := visited[current]; ok {
+		return false
+	}
+	visited[current] = struct{}{}
+
+	switch params := current.Params.(type) {
+	case *AssignParams:
+		return canReachWaitTargetFrom(params.Next, target, visited)
+
+	case *BranchParams:
+		for i := range params.Cases {
+			if canReachWaitTargetFrom(params.Cases[i].Next, target, visited) {
+				return true
+			}
+		}
+
+		if params.HasElse {
+			return canReachWaitTargetFrom(params.Else, target, visited)
+		}
+
+		return false
+
+	default:
+		return false
 	}
 }
