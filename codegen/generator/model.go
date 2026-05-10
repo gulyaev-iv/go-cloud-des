@@ -62,8 +62,6 @@ type ResourceDesc struct {
 	Seizes     []*BlockDesc
 }
 
-type BlockType uint8
-
 type BlockDesc struct {
 	Name string
 
