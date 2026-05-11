@@ -30,3 +30,7 @@ func (r *Rand) Triangular(min, mod, max float64) float64 {
 func (r *Rand) Exponential(lambda float64) float64 {
 	return r.ExpFloat64() / lambda
 }
+
+func (r *Rand) Normal(mean, stddev float64) float64 {
+	return mean + r.NormFloat64()*stddev
+}
