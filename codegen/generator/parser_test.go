@@ -210,38 +210,6 @@ func TestParseSectionHeader(t *testing.T) {
 	})
 }
 
-func TestParseNonNegativeInt(t *testing.T) {
-	tests := []struct {
-		name string
-		in   string
-		want int
-		ok   bool
-	}{
-		{name: "zero", in: "0", want: 0, ok: true},
-		{name: "positive", in: "1203", want: 1203, ok: true},
-
-		{name: "leading zeros", in: "0012", ok: false},
-		{name: "empty", in: "", ok: false},
-		{name: "negative", in: "-1", ok: false},
-		{name: "letters", in: "abc", ok: false},
-		{name: "mixed", in: "12abc", ok: false},
-		{name: "space", in: "12 3", ok: false},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got, ok := parseNonNegativeInt([]byte(tt.in))
-			if ok != tt.ok {
-				t.Fatalf("ok = %v, want %v", ok, tt.ok)
-			}
-
-			if ok && got != tt.want {
-				t.Fatalf("value = %d, want %d", got, tt.want)
-			}
-		})
-	}
-}
-
 func TestIsHex(t *testing.T) {
 	tests := []struct {
 		name string

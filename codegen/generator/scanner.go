@@ -57,7 +57,7 @@ func (s *LineScanner) Word() []byte {
 	}
 
 	i := 0
-	for i < len(s.line) && !isSpace(s.line[i]) {
+	for i < len(s.line) && !(s.line[i] == ' ' || s.line[i] == '\t') {
 		i++
 	}
 	word := s.line[:i]
@@ -75,10 +75,6 @@ func trimLeftSpaces(b []byte) []byte {
 		i++
 	}
 	return b[i:]
-}
-
-func isSpace(c byte) bool {
-	return c == ' ' || c == '\t'
 }
 
 func (s *LineScanner) LineNum() int {

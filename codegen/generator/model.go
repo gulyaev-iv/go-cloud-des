@@ -104,6 +104,7 @@ type CreateParams struct {
 func (*CreateParams) isBlockParams() {}
 
 type QueueParams struct {
+	InfiniteCapacity bool
 	Capacity Expr
 
 	Discipline QueueDiscipline

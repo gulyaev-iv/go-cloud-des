@@ -285,6 +285,10 @@ func parseQueueParams(scanner *LineScanner) (*QueueParams, error) {
 				return nil, parseErr(scanner.LineNum(), ErrIncorrectFormat, `missing required QUEUE parameter "next_overflow"`)
 			}
 
+			if params.ExitOnOverflow && params.InfiniteCapacity {
+				return nil, parseErr(scanner.LineNum(), ErrIncorrectFormat, `QUEUE with capacity infinity cannot use exit_on_overflow or next_overflow`)
+			}
+
 			return params, nil
 		}
 
@@ -295,9 +299,24 @@ func parseQueueParams(scanner *LineScanner) (*QueueParams, error) {
 			}
 
 		case "capacity":
-			if err := parseUniqueParam(scanner, &hasCapacity, &params.Capacity, readRequiredExpr, "QUEUE", "capacity"); err != nil {
-				return nil, err
+			if hasCapacity {
+				return nil, parseErr(scanner.LineNum(), ErrIncorrectFormat, `duplicate QUEUE parameter "capacity"`)
 			}
+
+			token := scanner.Line()
+			if len(token) == 0 {
+				return nil, parseErr(scanner.LineNum(), ErrIncorrectFormat, `expected expression for parameter "capacity"`)
+			}
+
+			raw := string(bytes.TrimSpace(token))
+			if raw == "infinity" {
+				params.InfiniteCapacity = true
+				params.Capacity = Expr("")
+			} else {
+				params.Capacity = Expr(raw)
+			}
+
+			hasCapacity = true
 
 		case "discipline":
 			if err := parseUniqueParam(scanner, &hasDiscipline, &params.Discipline, readQueueDiscipline, "QUEUE", "discipline"); err != nil {

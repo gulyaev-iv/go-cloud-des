@@ -81,3 +81,23 @@ func blockGoName(block *BlockDesc) string {
 func blockFuncName(block *BlockDesc) string {
 	return "func_block_" + blockKindName(block) + "_" + block.Name
 }
+
+func queuePushFuncName(block *BlockDesc) string {
+	return "func_queue_push_" + block.Name
+}
+
+func queueTopFuncName(block *BlockDesc) string {
+	return "func_queue_top_" + block.Name
+}
+
+func queueDeleteFuncName(block *BlockDesc) string {
+	return "func_queue_delete_" + block.Name
+}
+
+func queueGetFuncName(block *BlockDesc) string {
+	return "func_queue_get_" + block.Name
+}
+
+func queueTryAdvanceFuncName(block *BlockDesc) string {
+	return "func_queue_try_advance_" + block.Name
+}

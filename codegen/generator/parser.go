@@ -99,39 +99,17 @@ func parseSectionHeader(scanner *LineScanner, expectedName string) (int, error) 
 		return 0, parseErr(scanner.LineNum(), ErrIncorrectFormat, `expected count after "`+expectedName+`"`)
 	}
 
-	count, ok := parseNonNegativeInt(countToken)
-	if !ok {
+	count, err := strconv.ParseUint(string(countToken), 10, 64)
+	if err != nil {
 		return 0, parseErr(scanner.LineNum(), ErrIncorrectFormat, `expected non-negative count, got "`+string(countToken)+`"`)
 	}
 
-	err := expectOpeningBrace(scanner, "section count")
+	err = expectOpeningBrace(scanner, "section count")
 	if err != nil {
 		return 0, err
 	}
 
-	return count, nil
-}
-
-func parseNonNegativeInt(data []byte) (int, bool) {
-	if len(data) == 0 {
-		return 0, false
-	}
-
-	if len(data) > 1 && data[0] == '0' {
-		return 0, false
-	}
-	for _, c := range data {
-		if c < '0' || c > '9' {
-			return 0, false
-		}
-	}
-
-	n, err := strconv.Atoi(string(data))
-	if err != nil {
-		return 0, false
-	}
-
-	return n, true
+	return int(count), nil
 }
 
 func isHex(data []byte) bool {

@@ -90,6 +90,41 @@ func expectClosingBrace(scanner *LineScanner) error {
 	return nil
 }
 
+func registerGlobalName(model *Model, scanner *LineScanner, name string) error {
+	if _, ok := model.EntityByName[name]; ok {
+		return parseErr(scanner.LineNum(), ErrDuplicateName, `name "`+name+`" already declared`)
+	}
+	if _, ok := model.VarByName[name]; ok {
+		return parseErr(scanner.LineNum(), ErrDuplicateName, `name "`+name+`" already declared`)
+	}
+	if _, ok := model.ResourceByName[name]; ok {
+		return parseErr(scanner.LineNum(), ErrDuplicateName, `name "`+name+`" already declared`)
+	}
+	if _, ok := model.BlockByName[name]; ok {
+		return parseErr(scanner.LineNum(), ErrDuplicateName, `name "`+name+`" already declared`)
+	}
+
+	return nil
+}
+
+func isValidLiteralForType(value string, t ValueType) bool {
+	switch t {
+	case ValueFloat64:
+		_, err := strconv.ParseFloat(value, 64)
+		return err == nil
+	case ValueInt64:
+		_, err := strconv.ParseInt(value, 10, 64)
+		return err == nil
+	case ValueUint64:
+		_, err := strconv.ParseUint(value, 10, 64)
+		return err == nil
+	case ValueBool:
+		return value == "true" || value == "false"
+	default:
+		return false
+	}
+}
+
 func isIdentifier(data []byte) bool {
 	if len(data) == 0 {
 		return false
@@ -114,10 +149,6 @@ func isIdentStart(c byte) bool {
 		c == '_'
 }
 
-func isIdentPart(c byte) bool {
-	return isIdentStart(c) || (c >= '0' && c <= '9')
-}
-
 func isDSLKeyword(name string) bool {
 	switch name {
 	case "ENTITY", "VAR", "RESOURCE", "BLOCK",
@@ -127,6 +158,10 @@ func isDSLKeyword(name string) bool {
 	default:
 		return false
 	}
+}
+
+func isIdentPart(c byte) bool {
+	return isIdentStart(c) || (c >= '0' && c <= '9')
 }
 
 func validateName(scanner *LineScanner, token []byte) (string, error) {
@@ -140,23 +175,6 @@ func validateName(scanner *LineScanner, token []byte) (string, error) {
 	}
 
 	return name, nil
-}
-
-func registerGlobalName(model *Model, scanner *LineScanner, name string) error {
-	if _, ok := model.EntityByName[name]; ok {
-		return parseErr(scanner.LineNum(), ErrDuplicateName, `name "`+name+`" already declared`)
-	}
-	if _, ok := model.VarByName[name]; ok {
-		return parseErr(scanner.LineNum(), ErrDuplicateName, `name "`+name+`" already declared`)
-	}
-	if _, ok := model.ResourceByName[name]; ok {
-		return parseErr(scanner.LineNum(), ErrDuplicateName, `name "`+name+`" already declared`)
-	}
-	if _, ok := model.BlockByName[name]; ok {
-		return parseErr(scanner.LineNum(), ErrDuplicateName, `name "`+name+`" already declared`)
-	}
-
-	return nil
 }
 
 func parseDefaultValue(scanner *LineScanner, t ValueType) (string, error) {
@@ -176,24 +194,6 @@ func parseDefaultValue(scanner *LineScanner, t ValueType) (string, error) {
 	}
 
 	return value, nil
-}
-
-func isValidLiteralForType(value string, t ValueType) bool {
-	switch t {
-	case ValueFloat64:
-		_, err := strconv.ParseFloat(value, 64)
-		return err == nil
-	case ValueInt64:
-		_, err := strconv.ParseInt(value, 10, 64)
-		return err == nil
-	case ValueUint64:
-		_, err := strconv.ParseUint(value, 10, 64)
-		return err == nil
-	case ValueBool:
-		return value == "true" || value == "false"
-	default:
-		return false
-	}
 }
 
 type typedValueSpec struct {
