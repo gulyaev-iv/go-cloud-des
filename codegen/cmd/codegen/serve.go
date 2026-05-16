@@ -30,7 +30,17 @@ type ServeConfig struct {
 	NATSAckWait      time.Duration
 	NATSPublishWait  time.Duration
 
-	ArtifactDir string
+	ArtifactStore string
+	ArtifactDir   string
+
+	S3Endpoint     string
+	S3AccessKey    string
+	S3SecretKey    string
+	S3Bucket       string
+	S3UseSSL       bool
+	S3Region       string
+	S3Prefix       string
+	S3CreateBucket bool
 
 	ModuleDir     string
 	WorkDirRoot   string
@@ -46,7 +56,10 @@ func runServe(args []string) error {
 		return err
 	}
 
-	store, err := NewFSStore(cfg.ArtifactDir)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	store, err := newServeStore(ctx, cfg)
 	if err != nil {
 		return err
 	}
@@ -61,9 +74,6 @@ func runServe(args []string) error {
 	if err != nil {
 		return err
 	}
-
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
 
 	consumer, err := prepareJetStreamConsumer(ctx, js, cfg)
 	if err != nil {
@@ -92,8 +102,13 @@ func runServe(args []string) error {
 	}
 
 	log.Printf(
-		"codegen server started: workers=%d nats=%s stream=%s subject=%s consumer=%s artifact_dir=%s",
-		cfg.Workers, cfg.NATSURL, cfg.NATSStream, cfg.NATSSubject, cfg.NATSConsumer, cfg.ArtifactDir,
+		"codegen server started: workers=%d nats=%s stream=%s subject=%s consumer=%s artifact_store=%s",
+		cfg.Workers,
+		cfg.NATSURL,
+		cfg.NATSStream,
+		cfg.NATSSubject,
+		cfg.NATSConsumer,
+		artifactStoreDescription(cfg),
 	)
 
 	err = fetchLoop(ctx, cfg, consumer, tasks, available)
@@ -107,6 +122,45 @@ func runServe(args []string) error {
 
 	log.Printf("codegen server stopped")
 	return nil
+}
+
+func newServeStore(ctx context.Context, cfg ServeConfig) (Store, error) {
+	switch cfg.ArtifactStore {
+	case "fs":
+		return NewFSStore(cfg.ArtifactDir)
+
+	case "s3":
+		return NewS3Store(ctx, S3StoreConfig{
+			Endpoint:     cfg.S3Endpoint,
+			AccessKey:    cfg.S3AccessKey,
+			SecretKey:    cfg.S3SecretKey,
+			Bucket:       cfg.S3Bucket,
+			UseSSL:       cfg.S3UseSSL,
+			Region:       cfg.S3Region,
+			Prefix:       cfg.S3Prefix,
+			CreateBucket: cfg.S3CreateBucket,
+		})
+
+	default:
+		return nil, fmt.Errorf("unknown artifact store %q", cfg.ArtifactStore)
+	}
+}
+
+func artifactStoreDescription(cfg ServeConfig) string {
+	switch cfg.ArtifactStore {
+	case "fs":
+		return fmt.Sprintf("fs:%s", cfg.ArtifactDir)
+
+	case "s3":
+		if cfg.S3Prefix == "" {
+			return fmt.Sprintf("s3://%s endpoint=%s", cfg.S3Bucket, cfg.S3Endpoint)
+		}
+
+		return fmt.Sprintf("s3://%s/%s endpoint=%s", cfg.S3Bucket, cfg.S3Prefix, cfg.S3Endpoint)
+
+	default:
+		return cfg.ArtifactStore
+	}
 }
 
 func parseServeConfig(args []string) (ServeConfig, error) {
@@ -125,7 +179,17 @@ func parseServeConfig(args []string) (ServeConfig, error) {
 	fs.DurationVar(&cfg.NATSAckWait, "nats-ack-wait", 10*time.Minute, "JetStream ack wait for build tasks")
 	fs.DurationVar(&cfg.NATSPublishWait, "nats-publish-wait", 5*time.Second, "max wait for publishing result")
 
+	fs.StringVar(&cfg.ArtifactStore, "artifact-store", "fs", "artifact store backend: fs or s3")
 	fs.StringVar(&cfg.ArtifactDir, "artifact-dir", "./artifacts", "filesystem artifact directory")
+
+	fs.StringVar(&cfg.S3Endpoint, "s3-endpoint", "localhost:9000", "S3-compatible storage endpoint")
+	fs.StringVar(&cfg.S3AccessKey, "s3-access-key", "minioadmin", "S3 access key")
+	fs.StringVar(&cfg.S3SecretKey, "s3-secret-key", "minioadmin", "S3 secret key")
+	fs.StringVar(&cfg.S3Bucket, "s3-bucket", "cloud-des-artifacts", "S3 bucket for artifacts")
+	fs.BoolVar(&cfg.S3UseSSL, "s3-use-ssl", false, "use HTTPS for S3-compatible storage")
+	fs.StringVar(&cfg.S3Region, "s3-region", "us-east-1", "S3 region")
+	fs.StringVar(&cfg.S3Prefix, "s3-prefix", "", "S3 object key prefix")
+	fs.BoolVar(&cfg.S3CreateBucket, "s3-create-bucket", true, "create S3 bucket if it does not exist")
 
 	fs.StringVar(&cfg.ModuleDir, "module-dir", ".", "local path to codegen module")
 	fs.StringVar(&cfg.WorkDirRoot, "work-dir", "", "temporary build work directory root")
@@ -162,9 +226,34 @@ func parseServeConfig(args []string) (ServeConfig, error) {
 	if cfg.NATSPublishWait <= 0 {
 		return cfg, fmt.Errorf("nats-publish-wait must be > 0")
 	}
-	if cfg.ArtifactDir == "" {
-		return cfg, fmt.Errorf("empty artifact-dir")
+
+	switch cfg.ArtifactStore {
+	case "fs":
+		if cfg.ArtifactDir == "" {
+			return cfg, fmt.Errorf("empty artifact-dir")
+		}
+
+	case "s3":
+		if cfg.S3Endpoint == "" {
+			return cfg, fmt.Errorf("empty s3-endpoint")
+		}
+		if cfg.S3AccessKey == "" {
+			return cfg, fmt.Errorf("empty s3-access-key")
+		}
+		if cfg.S3SecretKey == "" {
+			return cfg, fmt.Errorf("empty s3-secret-key")
+		}
+		if cfg.S3Bucket == "" {
+			return cfg, fmt.Errorf("empty s3-bucket")
+		}
+		if cfg.S3Region == "" {
+			return cfg, fmt.Errorf("empty s3-region")
+		}
+
+	default:
+		return cfg, fmt.Errorf("unknown artifact-store %q, expected fs or s3", cfg.ArtifactStore)
 	}
+
 	if cfg.DefaultGOOS == "" {
 		return cfg, fmt.Errorf("empty default-goos")
 	}
