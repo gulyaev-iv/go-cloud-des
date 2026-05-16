@@ -21,7 +21,9 @@ type ProcessConfig struct {
 	KeepWorkDir   bool
 }
 
-func processTask(ctx context.Context, cfg ProcessConfig, store Store, task Task) TaskResult {
+func processTask(ctx context.Context, cfg ProcessConfig, store Store, task Task) ProcessOutput {
+	totalStart := time.Now()
+
 	result := TaskResult{
 		RequestID: task.RequestID,
 		ModelHash: task.ModelHash,
@@ -30,27 +32,51 @@ func processTask(ctx context.Context, cfg ProcessConfig, store Store, task Task)
 		GOARCH:    task.GOARCH,
 	}
 
-	if err := normalizeTask(&task, &result, cfg); err != nil {
-		return failResult(result, stageValidateRequest, errorBadRequest, err)
+	metrics := TaskMetrics{
+		RequestID: task.RequestID,
+		ModelHash: task.ModelHash,
+		Mode:      task.Mode,
+		GOOS:      task.GOOS,
+		GOARCH:    task.GOARCH,
 	}
 
+	finish := func(result TaskResult) ProcessOutput {
+		completeTaskMetrics(&metrics, totalStart, result)
+		return ProcessOutput{
+			Result:  result,
+			Metrics: metrics,
+		}
+	}
+
+	fail := func(stage string, code string, err error) ProcessOutput {
+		return finish(failResult(result, stage, code, err))
+	}
+
+	if err := normalizeTask(&task, &result, cfg); err != nil {
+		return fail(stageValidateRequest, errorBadRequest, err)
+	}
+
+	generateStart := time.Now()
 	genResult, err := generator.GenerateWithHash(task.ModelHash, []byte(task.DSL))
+	metrics.GenerateMS = durationMS(time.Since(generateStart))
 	if err != nil {
-		return failResult(result, stageGenerate, errorGenerate, err)
+		return fail(stageGenerate, errorGenerate, err)
 	}
 
 	result.ModelHash = genResult.Hash
 
 	storeSource := boolOrDefault(task.StoreSource, true)
 	if storeSource {
+		storeSourceStart := time.Now()
 		ref, err := store.PutBytes(
 			ctx,
 			sourceObjectKey(task.ModelHash),
 			genResult.Source,
 			"text/x-go; charset=utf-8",
 		)
+		metrics.StoreSourceMS = durationMS(time.Since(storeSourceStart))
 		if err != nil {
-			return failResult(result, stageStoreSource, errorStoreSource, err)
+			return fail(stageStoreSource, errorStoreSource, err)
 		}
 
 		result.Source = ref
@@ -58,14 +84,14 @@ func processTask(ctx context.Context, cfg ProcessConfig, store Store, task Task)
 
 	if task.Mode == taskModeGenerate {
 		result.OK = true
-		return result
+		return finish(result)
 	}
 
 	storeBinary := boolOrDefault(task.StoreBinary, true)
 
 	outputDir, err := os.MkdirTemp(cfg.WorkDirRoot, "cloud-des-codegen-bin-*")
 	if err != nil {
-		return failResult(result, stageBuild, errorBuild, err)
+		return fail(stageBuild, errorBuild, err)
 	}
 	defer os.RemoveAll(outputDir)
 
@@ -76,6 +102,7 @@ func processTask(ctx context.Context, cfg ProcessConfig, store Store, task Task)
 		timeout = time.Duration(task.BuildTimeoutSec) * time.Second
 	}
 
+	buildStart := time.Now()
 	buildResult, err := builder.Build(ctx, builder.Request{
 		Source:      genResult.Source,
 		OutputPath:  outputPath,
@@ -86,16 +113,20 @@ func processTask(ctx context.Context, cfg ProcessConfig, store Store, task Task)
 		Timeout:     timeout,
 		KeepWorkDir: cfg.KeepWorkDir,
 	})
+	metrics.BuildMS = durationMS(time.Since(buildStart))
 
 	if buildResult != nil && len(buildResult.BuildLog) > 0 {
+		storeBuildLogStart := time.Now()
 		ref, storeErr := store.PutBytes(
 			ctx,
 			buildLogObjectKey(task.ModelHash, task.GOOS, task.GOARCH),
 			buildResult.BuildLog,
 			"text/plain; charset=utf-8",
 		)
+		metrics.StoreBuildLogMS = durationMS(time.Since(storeBuildLogStart))
+
 		if storeErr != nil && err == nil {
-			return failResult(result, stageStoreBuildLog, errorStoreBuildLog, storeErr)
+			return fail(stageStoreBuildLog, errorStoreBuildLog, storeErr)
 		}
 
 		if storeErr == nil {
@@ -104,25 +135,27 @@ func processTask(ctx context.Context, cfg ProcessConfig, store Store, task Task)
 	}
 
 	if err != nil {
-		return failResult(result, stageBuild, errorBuild, err)
+		return fail(stageBuild, errorBuild, err)
 	}
 
 	if storeBinary {
+		storeBinaryStart := time.Now()
 		ref, err := store.PutFile(
 			ctx,
 			binaryObjectKey(task.ModelHash, task.GOOS, task.GOARCH),
 			buildResult.BinaryPath,
 			"application/octet-stream",
 		)
+		metrics.StoreBinaryMS = durationMS(time.Since(storeBinaryStart))
 		if err != nil {
-			return failResult(result, stageStoreBinary, errorStoreBinary, err)
+			return fail(stageStoreBinary, errorStoreBinary, err)
 		}
 
 		result.Binary = ref
 	}
 
 	result.OK = true
-	return result
+	return finish(result)
 }
 
 func normalizeTask(task *Task, result *TaskResult, cfg ProcessConfig) error {

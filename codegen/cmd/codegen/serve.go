@@ -29,6 +29,7 @@ type ServeConfig struct {
 	NATSFetchWait    time.Duration
 	NATSAckWait      time.Duration
 	NATSPublishWait  time.Duration
+	MetricsSubject   string
 
 	ArtifactStore string
 	ArtifactDir   string
@@ -178,6 +179,7 @@ func parseServeConfig(args []string) (ServeConfig, error) {
 	fs.DurationVar(&cfg.NATSFetchWait, "nats-fetch-wait", time.Second, "max wait for one JetStream fetch")
 	fs.DurationVar(&cfg.NATSAckWait, "nats-ack-wait", 10*time.Minute, "JetStream ack wait for build tasks")
 	fs.DurationVar(&cfg.NATSPublishWait, "nats-publish-wait", 5*time.Second, "max wait for publishing result")
+	fs.StringVar(&cfg.MetricsSubject, "metrics-subject", "", "Core NATS subject for task metrics; empty disables metrics publishing")
 
 	fs.StringVar(&cfg.ArtifactStore, "artifact-store", "fs", "artifact store backend: fs or s3")
 	fs.StringVar(&cfg.ArtifactDir, "artifact-dir", "./artifacts", "filesystem artifact directory")
@@ -376,20 +378,32 @@ func handleTaskMessage(workerID int, cfg ServeConfig, processCfg ProcessConfig, 
 			Message:   err.Error(),
 		}
 
+		metrics := TaskMetrics{
+			OK:            false,
+			Stage:         stageDecode,
+			ErrorCode:     errorDecode,
+			ArtifactStore: cfg.ArtifactStore,
+		}
+
 		replySubject := msg.Reply()
 		if replySubject == "" {
 			log.Printf("worker=%d decode error without reply subject: %v", workerID, err)
+
+			publishMetricsBestEffort(nc, cfg, metrics)
+
 			if ackErr := msg.Ack(); ackErr != nil {
 				log.Printf("worker=%d ack error after decode failure: %v", workerID, ackErr)
 			}
 			return
 		}
 
-		if err := publishTaskResult(nc, replySubject, result, cfg.NATSPublishWait); err != nil {
+		if err := publishJSON(nc, replySubject, result, cfg.NATSPublishWait); err != nil {
 			log.Printf("worker=%d publish decode error failed: %v", workerID, err)
 			_ = msg.Nak()
 			return
 		}
+
+		publishMetricsBestEffort(nc, cfg, metrics)
 
 		if err := msg.Ack(); err != nil {
 			log.Printf("worker=%d ack error after decode failure: %v", workerID, err)
@@ -402,12 +416,17 @@ func handleTaskMessage(workerID int, cfg ServeConfig, processCfg ProcessConfig, 
 		replySubject = msg.Reply()
 	}
 
-	result := processTask(context.Background(), processCfg, store, task)
+	output := processTask(context.Background(), processCfg, store, task)
+	result := output.Result
+	metrics := output.Metrics
+	metrics.ArtifactStore = cfg.ArtifactStore
 
 	if replySubject == "" {
 		log.Printf("worker=%d request_id=%s no reply subject, result dropped ok=%v stage=%s error=%s",
 			workerID, task.RequestID, result.OK, result.Stage, result.ErrorCode,
 		)
+
+		publishMetricsBestEffort(nc, cfg, metrics)
 
 		if err := msg.Ack(); err != nil {
 			log.Printf("worker=%d ack error without reply subject: %v", workerID, err)
@@ -415,7 +434,7 @@ func handleTaskMessage(workerID int, cfg ServeConfig, processCfg ProcessConfig, 
 		return
 	}
 
-	if err := publishTaskResult(nc, replySubject, result, cfg.NATSPublishWait); err != nil {
+	if err := publishJSON(nc, replySubject, result, cfg.NATSPublishWait); err != nil {
 		log.Printf(
 			"worker=%d request_id=%s publish result failed: %v",
 			workerID, task.RequestID, err,
@@ -424,6 +443,8 @@ func handleTaskMessage(workerID int, cfg ServeConfig, processCfg ProcessConfig, 
 		_ = msg.Nak()
 		return
 	}
+
+	publishMetricsBestEffort(nc, cfg, metrics)
 
 	if err := msg.Ack(); err != nil {
 		log.Printf("worker=%d request_id=%s ack error: %v", workerID, task.RequestID, err)
@@ -436,8 +457,8 @@ func handleTaskMessage(workerID int, cfg ServeConfig, processCfg ProcessConfig, 
 	)
 }
 
-func publishTaskResult(nc *nats.Conn, subject string, result TaskResult, wait time.Duration) error {
-	data, err := json.Marshal(result)
+func publishJSON[T any](nc *nats.Conn, subject string, payload T, wait time.Duration) error {
+	data, err := json.Marshal(payload)
 	if err != nil {
 		return err
 	}
@@ -447,4 +468,19 @@ func publishTaskResult(nc *nats.Conn, subject string, result TaskResult, wait ti
 	}
 
 	return nc.FlushTimeout(wait)
+}
+
+func publishMetricsBestEffort(nc *nats.Conn, cfg ServeConfig, metrics TaskMetrics) {
+	if cfg.MetricsSubject == "" {
+		return
+	}
+
+	if err := publishJSON(nc, cfg.MetricsSubject, metrics, cfg.NATSPublishWait); err != nil {
+		log.Printf(
+			"publish metrics failed: request_id=%s subject=%s error=%v",
+			metrics.RequestID,
+			cfg.MetricsSubject,
+			err,
+		)
+	}
 }

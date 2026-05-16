@@ -42,4 +42,5 @@ func printUsage() {
 	fmt.Fprintln(os.Stderr, "  codegen build -in model.dsl -out ./bin/model-linux-amd64 -goos linux -goarch amd64")
 	fmt.Fprintln(os.Stderr, "  codegen serve -workers 4 -nats-url nats://localhost:4222 -artifact-store fs -artifact-dir ./artifacts")
 	fmt.Fprintln(os.Stderr, "  codegen serve -workers 4 -nats-url nats://localhost:4222 -artifact-store s3 -s3-endpoint localhost:9000 -s3-bucket cloud-des-artifacts")
+	fmt.Fprintln(os.Stderr, "  codegen serve -workers 4 -nats-url nats://localhost:4222 -artifact-store s3 -s3-endpoint localhost:9000 -s3-bucket cloud-des-artifacts -metrics-subject codegen.metrics.task")
 }
