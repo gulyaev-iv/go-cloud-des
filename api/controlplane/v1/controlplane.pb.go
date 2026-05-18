@@ -200,8 +200,7 @@ func (x *ExperimentCommonConfig) GetRunTimeoutMs() uint64 {
 
 type ExperimentParams struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	ExperimentId  string                 `protobuf:"bytes,1,opt,name=experiment_id,json=experimentId,proto3" json:"experiment_id,omitempty"`
-	SetVars       []*v1.SetVar           `protobuf:"bytes,2,rep,name=set_vars,json=setVars,proto3" json:"set_vars,omitempty"`
+	SetVars       []*v1.SetVar           `protobuf:"bytes,1,rep,name=set_vars,json=setVars,proto3" json:"set_vars,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -234,13 +233,6 @@ func (x *ExperimentParams) ProtoReflect() protoreflect.Message {
 // Deprecated: Use ExperimentParams.ProtoReflect.Descriptor instead.
 func (*ExperimentParams) Descriptor() ([]byte, []int) {
 	return file_controlplane_v1_controlplane_proto_rawDescGZIP(), []int{2}
-}
-
-func (x *ExperimentParams) GetExperimentId() string {
-	if x != nil {
-		return x.ExperimentId
-	}
-	return ""
 }
 
 func (x *ExperimentParams) GetSetVars() []*v1.SetVar {
@@ -1190,10 +1182,9 @@ const file_controlplane_v1_controlplane_proto_rawDesc = "" +
 	"metricStep\x12#\n" +
 	"\rstore_metrics\x18\x04 \x01(\bR\fstoreMetrics\x12,\n" +
 	"\x12memory_limit_bytes\x18\x05 \x01(\x04R\x10memoryLimitBytes\x12$\n" +
-	"\x0erun_timeout_ms\x18\x06 \x01(\x04R\frunTimeoutMs\"i\n" +
-	"\x10ExperimentParams\x12#\n" +
-	"\rexperiment_id\x18\x01 \x01(\tR\fexperimentId\x120\n" +
-	"\bset_vars\x18\x02 \x03(\v2\x15.dispatcher.v1.SetVarR\asetVars\"\xdc\x02\n" +
+	"\x0erun_timeout_ms\x18\x06 \x01(\x04R\frunTimeoutMs\"D\n" +
+	"\x10ExperimentParams\x120\n" +
+	"\bset_vars\x18\x01 \x03(\v2\x15.dispatcher.v1.SetVarR\asetVars\"\xdc\x02\n" +
 	"\x1dSubmitExperimentBatchResponse\x12\x1a\n" +
 	"\baccepted\x18\x01 \x01(\bR\baccepted\x12\x19\n" +
 	"\bbatch_id\x18\x02 \x01(\tR\abatchId\x12\x1d\n" +

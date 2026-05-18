@@ -45,8 +45,7 @@ message ExperimentCommonConfig {
 }
 
 message ExperimentParams {
-  string experiment_id = 1;
-  repeated dispatcher.v1.SetVar set_vars = 2;
+  repeated dispatcher.v1.SetVar set_vars = 1;
 }
 
 message SubmitExperimentBatchResponse {
