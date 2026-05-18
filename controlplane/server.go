@@ -16,31 +16,18 @@ type ControlPlaneServer struct {
 
 	cfg Config
 
-	repo  *Repository
-	nodes *NodeRegistry
+	repo    *Repository
+	nodes   *NodeRegistry
+	codegen *CodegenClient
 }
 
-func NewControlPlaneServer(cfg Config, repo *Repository, nodes *NodeRegistry) *ControlPlaneServer {
+func NewControlPlaneServer(cfg Config, repo *Repository, nodes *NodeRegistry, codegen *CodegenClient) *ControlPlaneServer {
 	return &ControlPlaneServer{
-		cfg:   cfg,
-		repo:  repo,
-		nodes: nodes,
+		cfg:     cfg,
+		repo:    repo,
+		nodes:   nodes,
+		codegen: codegen,
 	}
-}
-
-func (s *ControlPlaneServer) SubmitExperimentBatch(ctx context.Context, req *cpb.SubmitExperimentBatchRequest) (*cpb.SubmitExperimentBatchResponse, error) {
-	log.Printf(
-		"submit experiment batch rejected: batch_id=%s reason=not_implemented",
-		req.GetBatchId(),
-	)
-
-	return &cpb.SubmitExperimentBatchResponse{
-		Accepted:  false,
-		BatchId:   req.GetBatchId(),
-		Status:    statusFailed,
-		ErrorCode: "not_implemented",
-		Message:   "SubmitExperimentBatch will be implemented after codegen NATS client and scheduler",
-	}, nil
 }
 
 func (s *ControlPlaneServer) GetExperimentBatch(ctx context.Context, req *cpb.GetExperimentBatchRequest) (*cpb.ExperimentBatchStatus, error) {

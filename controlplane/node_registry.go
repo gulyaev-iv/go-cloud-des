@@ -76,17 +76,21 @@ func (r *NodeRegistry) Heartbeat(node *dpb.NodeStatus) error {
 }
 
 func (r *NodeRegistry) List(status string) []*dpb.NodeStatus {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
+	r.mu.Lock()
+	defer r.mu.Unlock()
 
 	status = strings.ToUpper(strings.TrimSpace(status))
 	now := time.Now()
 
 	result := make([]*dpb.NodeStatus, 0, len(r.nodes))
 
-	for _, record := range r.nodes {
-		currentStatus := r.status(record, now)
-		if status != "" && status != currentStatus {
+	for nodeID, record := range r.nodes {
+		if now.Sub(record.LastSeenAt) > r.ttl {
+			delete(r.nodes, nodeID)
+			continue
+		}
+
+		if status != "" && status != nodeStatusOnline {
 			continue
 		}
 
@@ -94,14 +98,6 @@ func (r *NodeRegistry) List(status string) []*dpb.NodeStatus {
 	}
 
 	return result
-}
-
-func (r *NodeRegistry) status(record NodeRecord, now time.Time) string {
-	if now.Sub(record.LastSeenAt) <= r.ttl {
-		return nodeStatusOnline
-	}
-
-	return nodeStatusStale
 }
 
 func cloneNodeStatus(node *dpb.NodeStatus) *dpb.NodeStatus {

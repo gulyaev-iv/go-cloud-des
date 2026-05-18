@@ -1,6 +1,8 @@
 package main
 
 const (
+	statusPending   = "PENDING"
+	statusStarting  = "STARTING"
 	statusSubmitted = "SUBMITTED"
 	statusBuilding  = "BUILDING"
 	statusReady     = "READY"
@@ -15,5 +17,4 @@ const (
 	artifactStatusMissing  = "MISSING"
 
 	nodeStatusOnline = "ONLINE"
-	nodeStatusStale  = "STALE"
 )

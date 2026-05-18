@@ -35,7 +35,13 @@ func runServe(args []string) error {
 	repo := NewRepository(db)
 	nodes := NewNodeRegistry(cfg.NodeTTL)
 
-	server := NewControlPlaneServer(cfg, repo, nodes)
+	codegen, err := NewCodegenClient(ctx, cfg)
+	if err != nil {
+		return err
+	}
+	defer codegen.Close()
+
+	server := NewControlPlaneServer(cfg, repo, nodes, codegen)
 
 	grpcServer := grpc.NewServer()
 
@@ -57,11 +63,14 @@ func runServe(args []string) error {
 	}()
 
 	log.Printf(
-		"controlplane started: listen=%s default_goos=%s default_goarch=%s node_ttl=%s",
+		"controlplane started: listen=%s default_goos=%s default_goarch=%s node_ttl=%s nats_url=%s codegen_stream=%s codegen_subject=%s",
 		cfg.ListenAddr,
 		cfg.DefaultGOOS,
 		cfg.DefaultGOARCH,
 		cfg.NodeTTL,
+		cfg.NATSURL,
+		cfg.CodegenStream,
+		cfg.CodegenSubject,
 	)
 
 	serveErr := grpcServer.Serve(listener)

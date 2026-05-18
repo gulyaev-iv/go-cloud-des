@@ -564,3 +564,425 @@ func int64ToU64(value int64) uint64 {
 
 	return uint64(value)
 }
+
+type CreateExperimentBatchInput struct {
+	BatchID string
+
+	ModelHash string
+	DSL       string
+
+	SelectedGOOS   string
+	SelectedGOARCH string
+
+	StoreSource     bool
+	StoreBinary     bool
+	BuildTimeoutSec int32
+
+	Common      *cpb.ExperimentCommonConfig
+	Experiments []*cpb.ExperimentParams
+}
+
+func (r *Repository) CreateExperimentBatch(ctx context.Context, input CreateExperimentBatchInput) error {
+	stopRuleJSON, err := json.Marshal(input.Common.GetStopRule())
+	if err != nil {
+		return err
+	}
+
+	metrics := input.Common.GetMetrics()
+	if metrics == nil {
+		metrics = []string{}
+	}
+
+	metricsJSON, err := json.Marshal(metrics)
+	if err != nil {
+		return err
+	}
+
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer rollbackQuiet(ctx, tx)
+
+	if _, err := tx.Exec(ctx, `
+INSERT INTO models (model_hash, dsl)
+VALUES ($1, $2)
+ON CONFLICT (model_hash) DO NOTHING
+`, input.ModelHash, input.DSL); err != nil {
+		return err
+	}
+
+	if _, err := tx.Exec(ctx, `
+INSERT INTO experiment_batches (
+    batch_id,
+    model_hash,
+    status,
+    selected_goos,
+    selected_goarch,
+    store_source,
+    store_binary,
+    build_timeout_sec,
+    stop_rule,
+    metrics,
+    metric_step,
+    store_metrics,
+    memory_limit_bytes,
+    run_timeout_ms
+)
+VALUES (
+    $1, $2, $3, $4, $5,
+    $6, $7, $8,
+    $9, $10, $11, $12, $13, $14
+)
+`,
+		input.BatchID,
+		input.ModelHash,
+		statusSubmitted,
+		input.SelectedGOOS,
+		input.SelectedGOARCH,
+		input.StoreSource,
+		input.StoreBinary,
+		input.BuildTimeoutSec,
+		stopRuleJSON,
+		metricsJSON,
+		input.Common.GetMetricStep(),
+		input.Common.GetStoreMetrics(),
+		u64ToI64(input.Common.GetMemoryLimitBytes()),
+		u64ToI64(input.Common.GetRunTimeoutMs()),
+	); err != nil {
+		return err
+	}
+
+	for _, experiment := range input.Experiments {
+		setVarsJSON, err := json.Marshal(experiment.GetSetVars())
+		if err != nil {
+			return err
+		}
+
+		if _, err := tx.Exec(ctx, `
+INSERT INTO experiments (
+    model_hash,
+    experiment_id,
+    batch_id,
+    status,
+    set_vars,
+    memory_limit_bytes
+)
+VALUES ($1, $2, $3, $4, $5, $6)
+`,
+			input.ModelHash,
+			experiment.GetExperimentId(),
+			input.BatchID,
+			statusPending,
+			setVarsJSON,
+			u64ToI64(input.Common.GetMemoryLimitBytes()),
+		); err != nil {
+			return err
+		}
+	}
+
+	return tx.Commit(ctx)
+}
+
+func rollbackQuiet(ctx context.Context, tx pgx.Tx) {
+	_ = tx.Rollback(ctx)
+}
+
+type ModelArtifactRecord struct {
+	ModelHash string
+	GOOS      string
+	GOARCH    string
+
+	Status string
+
+	Source   *CodegenArtifactRef
+	Binary   *CodegenArtifactRef
+	BuildLog *CodegenArtifactRef
+
+	ErrorCode string
+	Message   string
+}
+
+func (r *Repository) GetReadyModelArtifact(ctx context.Context, modelHash string, goos string, goarch string) (*ModelArtifactRecord, bool, error) {
+	var row struct {
+		ModelHash string
+		GOOS      string
+		GOARCH    string
+		Status    string
+
+		SourceKey         sql.NullString
+		SourceSHA256      sql.NullString
+		SourceSize        sql.NullInt64
+		SourceContentType sql.NullString
+
+		BinaryKey         sql.NullString
+		BinarySHA256      sql.NullString
+		BinarySize        sql.NullInt64
+		BinaryContentType sql.NullString
+
+		BuildLogKey         sql.NullString
+		BuildLogSHA256      sql.NullString
+		BuildLogSize        sql.NullInt64
+		BuildLogContentType sql.NullString
+	}
+
+	err := r.db.QueryRow(ctx, `
+SELECT
+    model_hash,
+    goos,
+    goarch,
+    status,
+
+    source_key,
+    source_sha256,
+    source_size,
+    source_content_type,
+
+    binary_key,
+    binary_sha256,
+    binary_size,
+    binary_content_type,
+
+    build_log_key,
+    build_log_sha256,
+    build_log_size,
+    build_log_content_type
+FROM model_artifacts
+WHERE
+    model_hash = $1
+    AND goos = $2
+    AND goarch = $3
+    AND status = $4
+    AND binary_key IS NOT NULL
+    AND binary_sha256 IS NOT NULL
+`, modelHash, goos, goarch, artifactStatusReady).Scan(
+		&row.ModelHash,
+		&row.GOOS,
+		&row.GOARCH,
+		&row.Status,
+		&row.SourceKey,
+		&row.SourceSHA256,
+		&row.SourceSize,
+		&row.SourceContentType,
+		&row.BinaryKey,
+		&row.BinarySHA256,
+		&row.BinarySize,
+		&row.BinaryContentType,
+		&row.BuildLogKey,
+		&row.BuildLogSHA256,
+		&row.BuildLogSize,
+		&row.BuildLogContentType,
+	)
+
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, false, err
+	}
+
+	return &ModelArtifactRecord{
+		ModelHash: row.ModelHash,
+		GOOS:      row.GOOS,
+		GOARCH:    row.GOARCH,
+		Status:    row.Status,
+		Source:    codegenArtifactFromNulls(row.SourceKey, row.SourceSHA256, row.SourceSize, row.SourceContentType),
+		Binary:    codegenArtifactFromNulls(row.BinaryKey, row.BinarySHA256, row.BinarySize, row.BinaryContentType),
+		BuildLog:  codegenArtifactFromNulls(row.BuildLogKey, row.BuildLogSHA256, row.BuildLogSize, row.BuildLogContentType),
+	}, true, nil
+}
+
+func (r *Repository) MarkModelArtifactBuilding(ctx context.Context, modelHash string, goos string, goarch string) error {
+	_, err := r.db.Exec(ctx, `
+INSERT INTO model_artifacts (
+    model_hash,
+    goos,
+    goarch,
+    status,
+    error_code,
+    message,
+    updated_at
+)
+VALUES ($1, $2, $3, $4, NULL, NULL, now())
+ON CONFLICT (model_hash, goos, goarch)
+DO UPDATE SET
+    status = EXCLUDED.status,
+    error_code = NULL,
+    message = NULL,
+    updated_at = now()
+`, modelHash, goos, goarch, artifactStatusBuilding)
+
+	return err
+}
+
+func (r *Repository) SaveCodegenResult(ctx context.Context, task CodegenTask, result *CodegenTaskResult) error {
+	if result == nil {
+		return fmt.Errorf("empty codegen result")
+	}
+
+	modelHash := result.ModelHash
+	if modelHash == "" {
+		modelHash = task.ModelHash
+	}
+
+	goos := result.GOOS
+	if goos == "" {
+		goos = task.GOOS
+	}
+
+	goarch := result.GOARCH
+	if goarch == "" {
+		goarch = task.GOARCH
+	}
+
+	status := artifactStatusReady
+	errorCode := ""
+	message := ""
+
+	if !result.OK {
+		status = artifactStatusFailed
+		errorCode = result.ErrorCode
+		message = result.Message
+	}
+
+	_, err := r.db.Exec(ctx, `
+INSERT INTO model_artifacts (
+    model_hash,
+    goos,
+    goarch,
+    status,
+
+    source_key,
+    source_sha256,
+    source_size,
+    source_content_type,
+
+    binary_key,
+    binary_sha256,
+    binary_size,
+    binary_content_type,
+
+    build_log_key,
+    build_log_sha256,
+    build_log_size,
+    build_log_content_type,
+
+    error_code,
+    message,
+    updated_at
+)
+VALUES (
+    $1, $2, $3, $4,
+    $5, $6, $7, $8,
+    $9, $10, $11, $12,
+    $13, $14, $15, $16,
+    $17, $18, now()
+)
+ON CONFLICT (model_hash, goos, goarch)
+DO UPDATE SET
+    status = EXCLUDED.status,
+
+    source_key = EXCLUDED.source_key,
+    source_sha256 = EXCLUDED.source_sha256,
+    source_size = EXCLUDED.source_size,
+    source_content_type = EXCLUDED.source_content_type,
+
+    binary_key = EXCLUDED.binary_key,
+    binary_sha256 = EXCLUDED.binary_sha256,
+    binary_size = EXCLUDED.binary_size,
+    binary_content_type = EXCLUDED.binary_content_type,
+
+    build_log_key = EXCLUDED.build_log_key,
+    build_log_sha256 = EXCLUDED.build_log_sha256,
+    build_log_size = EXCLUDED.build_log_size,
+    build_log_content_type = EXCLUDED.build_log_content_type,
+
+    error_code = EXCLUDED.error_code,
+    message = EXCLUDED.message,
+    updated_at = now()
+`,
+		modelHash,
+		goos,
+		goarch,
+		status,
+
+		artifactKey(result.Source),
+		artifactSHA256(result.Source),
+		artifactSize(result.Source),
+		artifactContentType(result.Source),
+
+		artifactKey(result.Binary),
+		artifactSHA256(result.Binary),
+		artifactSize(result.Binary),
+		artifactContentType(result.Binary),
+
+		artifactKey(result.BuildLog),
+		artifactSHA256(result.BuildLog),
+		artifactSize(result.BuildLog),
+		artifactContentType(result.BuildLog),
+
+		nilIfEmpty(errorCode),
+		nilIfEmpty(message),
+	)
+
+	return err
+}
+
+func (r *Repository) UpdateBatchStatus(ctx context.Context, batchID string, batchStatus string, errorCode string, message string) error {
+	_, err := r.db.Exec(ctx, `
+UPDATE experiment_batches
+SET
+    status = $2,
+    error_code = $3,
+    message = $4,
+    updated_at = now()
+WHERE batch_id = $1
+`, batchID, batchStatus, nilIfEmpty(errorCode), nilIfEmpty(message))
+
+	return err
+}
+
+func codegenArtifactFromNulls(key sql.NullString, sha256 sql.NullString, size sql.NullInt64, contentType sql.NullString) *CodegenArtifactRef {
+	if !key.Valid || key.String == "" {
+		return nil
+	}
+
+	return &CodegenArtifactRef{
+		Key:         key.String,
+		SHA256:      nullString(sha256),
+		Size:        nullInt64Value(size),
+		ContentType: nullString(contentType),
+	}
+}
+
+func artifactKey(ref *CodegenArtifactRef) any {
+	if ref == nil || ref.Key == "" {
+		return nil
+	}
+
+	return ref.Key
+}
+
+func artifactSHA256(ref *CodegenArtifactRef) any {
+	if ref == nil || ref.SHA256 == "" {
+		return nil
+	}
+
+	return ref.SHA256
+}
+
+func artifactSize(ref *CodegenArtifactRef) any {
+	if ref == nil {
+		return nil
+	}
+
+	return ref.Size
+}
+
+func artifactContentType(ref *CodegenArtifactRef) any {
+	if ref == nil || ref.ContentType == "" {
+		return nil
+	}
+
+	return ref.ContentType
+}
