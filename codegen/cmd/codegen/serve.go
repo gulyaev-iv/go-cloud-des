@@ -189,7 +189,7 @@ func parseServeConfig(args []string) (ServeConfig, error) {
 	fs.StringVar(&cfg.S3SecretKey, "s3-secret-key", "minioadmin", "S3 secret key")
 	fs.StringVar(&cfg.S3Bucket, "s3-bucket", "cloud-des-artifacts", "S3 bucket for artifacts")
 	fs.BoolVar(&cfg.S3UseSSL, "s3-use-ssl", false, "use HTTPS for S3-compatible storage")
-	fs.StringVar(&cfg.S3Region, "s3-region", "us-east-1", "S3 region")
+	fs.StringVar(&cfg.S3Region, "s3-region", "ru-1", "S3 region")
 	fs.StringVar(&cfg.S3Prefix, "s3-prefix", "", "S3 object key prefix")
 	fs.BoolVar(&cfg.S3CreateBucket, "s3-create-bucket", true, "create S3 bucket if it does not exist")
 

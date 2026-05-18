@@ -3,15 +3,16 @@ package main
 import (
 	"bufio"
 	"fmt"
-	"github.com/gulyaev-iv/go-cloud-des/codegen/container"
-	random "github.com/gulyaev-iv/go-cloud-des/codegen/rand"
 	stdrand "math/rand/v2"
 	"os"
 	"strconv"
 	"strings"
+
+	"github.com/gulyaev-iv/go-cloud-des/codegen/container"
+	random "github.com/gulyaev-iv/go-cloud-des/codegen/rand"
 )
 
-const modelHash = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+const modelHash = "6f155949352b29d96564d08110c12682626a309f0058d80404a035f1b42f8b5d"
 
 const nullEntityType uint8 = 0
 
@@ -859,11 +860,73 @@ func handleCommand(line string) bool {
 		sendLine("READY")
 		return true
 	case "SET":
-		sendErr("unsupported_command", "SET is not supported yet")
+		if len(fields) == 3 {
+			if !setVar(fields[1], fields[2]) {
+				return false
+			}
+		} else if len(fields) == 4 && fields[2] == "=" {
+			if !setVar(fields[1], fields[3]) {
+				return false
+			}
+		} else {
+			sendErr("bad_set", "expected SET <var_name> <value> or SET <var_name> = <value>")
+			return false
+		}
 	default:
 		sendErr("unknown_command", fields[0])
 	}
 	return false
+}
+
+func setVar(name string, raw string) bool {
+	switch name {
+	case "totalEntitiesEnd":
+		value, err := strconv.ParseUint(raw, 10, 64)
+		if err != nil {
+			sendErr("bad_set_value", name+"="+raw)
+			return false
+		}
+		var_totalEntitiesEnd = value
+	case "totalEntitiesSink":
+		value, err := strconv.ParseUint(raw, 10, 64)
+		if err != nil {
+			sendErr("bad_set_value", name+"="+raw)
+			return false
+		}
+		var_totalEntitiesSink = value
+	case "arrivalRate":
+		value, err := strconv.ParseFloat(raw, 64)
+		if err != nil {
+			sendErr("bad_set_value", name+"="+raw)
+			return false
+		}
+		var_arrivalRate = value
+	case "serviceARate":
+		value, err := strconv.ParseFloat(raw, 64)
+		if err != nil {
+			sendErr("bad_set_value", name+"="+raw)
+			return false
+		}
+		var_serviceARate = value
+	case "serviceBRate":
+		value, err := strconv.ParseFloat(raw, 64)
+		if err != nil {
+			sendErr("bad_set_value", name+"="+raw)
+			return false
+		}
+		var_serviceBRate = value
+	case "serviceQCRate":
+		value, err := strconv.ParseFloat(raw, 64)
+		if err != nil {
+			sendErr("bad_set_value", name+"="+raw)
+			return false
+		}
+		var_serviceQCRate = value
+	default:
+		sendErr("unknown_set_target", name)
+		return false
+	}
+	return true
 }
 
 func resolveMetric(name string) (metricFunc, bool) {

@@ -11,7 +11,7 @@ import (
 	"strings"
 )
 
-const modelHash = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+const modelHash = "7407517515cf1d2019ab9458a0c6c032d5e39bbab2310ee0b63f2f3bdff17d86"
 
 const nullEntityType uint8 = 0
 
@@ -341,11 +341,45 @@ func handleCommand(line string) bool {
 		sendLine("READY")
 		return true
 	case "SET":
-		sendErr("unsupported_command", "SET is not supported yet")
+		if len(fields) == 3 {
+			if !setVar(fields[1], fields[2]) {
+				return false
+			}
+		} else if len(fields) == 4 && fields[2] == "=" {
+			if !setVar(fields[1], fields[3]) {
+				return false
+			}
+		} else {
+			sendErr("bad_set", "expected SET <var_name> <value> or SET <var_name> = <value>")
+			return false
+		}
 	default:
 		sendErr("unknown_command", fields[0])
 	}
 	return false
+}
+
+func setVar(name string, raw string) bool {
+	switch name {
+	case "arrivalRate":
+		value, err := strconv.ParseFloat(raw, 64)
+		if err != nil {
+			sendErr("bad_set_value", name+"="+raw)
+			return false
+		}
+		var_arrivalRate = value
+	case "serviceRate":
+		value, err := strconv.ParseFloat(raw, 64)
+		if err != nil {
+			sendErr("bad_set_value", name+"="+raw)
+			return false
+		}
+		var_serviceRate = value
+	default:
+		sendErr("unknown_set_target", name)
+		return false
+	}
+	return true
 }
 
 func resolveMetric(name string) (metricFunc, bool) {
