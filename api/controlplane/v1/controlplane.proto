@@ -1,0 +1,155 @@
+syntax = "proto3";
+
+package controlplane.v1;
+
+option go_package = "github.com/gulyaev-iv/go-cloud-des/api/controlplane/v1;controlplanev1";
+
+import "dispatcher/v1/dispatcher.proto";
+
+service ControlPlaneService {
+  rpc SubmitExperimentBatch(SubmitExperimentBatchRequest) returns (SubmitExperimentBatchResponse);
+  rpc GetExperimentBatch(GetExperimentBatchRequest) returns (ExperimentBatchStatus);
+  rpc GetExperiment(GetExperimentRequest) returns (dispatcher.v1.ExperimentStatus);
+  rpc ListNodes(ListNodesRequest) returns (ListNodesResponse);
+}
+
+service ControlPlaneNodeService {
+  rpc RegisterNode(RegisterNodeRequest) returns (RegisterNodeResponse);
+  rpc SendHeartbeat(NodeHeartbeat) returns (HeartbeatResponse);
+  rpc ReportExperimentResult(ReportExperimentResultRequest) returns (ReportExperimentResultResponse);
+}
+
+message SubmitExperimentBatchRequest {
+  string batch_id = 1;
+
+  string dsl = 2;
+
+  bool store_source = 3;
+  bool store_binary = 4;
+  int32 build_timeout_sec = 5;
+
+  ExperimentCommonConfig common = 6;
+
+  repeated ExperimentParams experiments = 7;
+}
+
+message ExperimentCommonConfig {
+  dispatcher.v1.StopRule stop_rule = 1;
+
+  repeated string metrics = 2;
+  double metric_step = 3;
+  bool store_metrics = 4;
+
+  uint64 memory_limit_bytes = 5;
+  uint64 run_timeout_ms = 6;
+}
+
+message ExperimentParams {
+  string experiment_id = 1;
+  repeated dispatcher.v1.SetVar set_vars = 2;
+}
+
+message SubmitExperimentBatchResponse {
+  bool accepted = 1;
+
+  string batch_id = 2;
+  string model_hash = 3;
+  string status = 4;
+
+  string selected_goos = 5;
+  string selected_goarch = 6;
+
+  string error_code = 7;
+  string message = 8;
+
+  repeated SubmittedExperiment experiments = 9;
+}
+
+message SubmittedExperiment {
+  string model_hash = 1;
+  string experiment_id = 2;
+  string status = 3;
+}
+
+message GetExperimentBatchRequest {
+  string batch_id = 1;
+}
+
+message GetExperimentRequest {
+  string model_hash = 1;
+  string experiment_id = 2;
+}
+
+message ExperimentBatchStatus {
+  string batch_id = 1;
+  string model_hash = 2;
+  string status = 3;
+
+  int32 total_experiments = 4;
+  int32 pending_experiments = 5;
+  int32 running_experiments = 6;
+  int32 finished_experiments = 7;
+  int32 failed_experiments = 8;
+  int32 canceled_experiments = 9;
+
+  ModelArtifact artifact = 10;
+
+  repeated dispatcher.v1.ExperimentStatus experiments = 11;
+
+  string selected_goos = 12;
+  string selected_goarch = 13;
+
+  string error_code = 14;
+  string message = 15;
+}
+
+message ModelArtifact {
+  string model_hash = 1;
+  string goos = 2;
+  string goarch = 3;
+
+  dispatcher.v1.ArtifactRef source = 4;
+  dispatcher.v1.ArtifactRef binary = 5;
+  dispatcher.v1.ArtifactRef build_log = 6;
+
+  string status = 7;
+  string error_code = 8;
+  string message = 9;
+}
+
+message RegisterNodeRequest {
+  dispatcher.v1.NodeStatus node = 1;
+}
+
+message RegisterNodeResponse {
+  bool accepted = 1;
+  string message = 2;
+}
+
+message NodeHeartbeat {
+  dispatcher.v1.NodeStatus node = 1;
+  int64 sent_at_unix_ms = 2;
+}
+
+message HeartbeatResponse {
+  bool ok = 1;
+  string message = 2;
+}
+
+message ReportExperimentResultRequest {
+  string node_id = 1;
+  dispatcher.v1.ExperimentStatus result = 2;
+}
+
+message ReportExperimentResultResponse {
+  bool ok = 1;
+  string message = 2;
+}
+
+message ListNodesRequest {
+  string status = 1;
+}
+
+message ListNodesResponse {
+  repeated dispatcher.v1.NodeStatus nodes = 1;
+}
