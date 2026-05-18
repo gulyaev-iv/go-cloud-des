@@ -454,6 +454,134 @@ func (x *GetExperimentBatchRequest) GetBatchId() string {
 	return ""
 }
 
+type CancelExperimentRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ModelHash     string                 `protobuf:"bytes,1,opt,name=model_hash,json=modelHash,proto3" json:"model_hash,omitempty"`
+	ExperimentId  string                 `protobuf:"bytes,2,opt,name=experiment_id,json=experimentId,proto3" json:"experiment_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CancelExperimentRequest) Reset() {
+	*x = CancelExperimentRequest{}
+	mi := &file_controlplane_v1_controlplane_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CancelExperimentRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CancelExperimentRequest) ProtoMessage() {}
+
+func (x *CancelExperimentRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_controlplane_v1_controlplane_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CancelExperimentRequest.ProtoReflect.Descriptor instead.
+func (*CancelExperimentRequest) Descriptor() ([]byte, []int) {
+	return file_controlplane_v1_controlplane_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *CancelExperimentRequest) GetModelHash() string {
+	if x != nil {
+		return x.ModelHash
+	}
+	return ""
+}
+
+func (x *CancelExperimentRequest) GetExperimentId() string {
+	if x != nil {
+		return x.ExperimentId
+	}
+	return ""
+}
+
+type CancelExperimentResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Canceled      bool                   `protobuf:"varint,1,opt,name=canceled,proto3" json:"canceled,omitempty"`
+	ModelHash     string                 `protobuf:"bytes,2,opt,name=model_hash,json=modelHash,proto3" json:"model_hash,omitempty"`
+	ExperimentId  string                 `protobuf:"bytes,3,opt,name=experiment_id,json=experimentId,proto3" json:"experiment_id,omitempty"`
+	Status        string                 `protobuf:"bytes,4,opt,name=status,proto3" json:"status,omitempty"`
+	Message       string                 `protobuf:"bytes,5,opt,name=message,proto3" json:"message,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CancelExperimentResponse) Reset() {
+	*x = CancelExperimentResponse{}
+	mi := &file_controlplane_v1_controlplane_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CancelExperimentResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CancelExperimentResponse) ProtoMessage() {}
+
+func (x *CancelExperimentResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_controlplane_v1_controlplane_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CancelExperimentResponse.ProtoReflect.Descriptor instead.
+func (*CancelExperimentResponse) Descriptor() ([]byte, []int) {
+	return file_controlplane_v1_controlplane_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *CancelExperimentResponse) GetCanceled() bool {
+	if x != nil {
+		return x.Canceled
+	}
+	return false
+}
+
+func (x *CancelExperimentResponse) GetModelHash() string {
+	if x != nil {
+		return x.ModelHash
+	}
+	return ""
+}
+
+func (x *CancelExperimentResponse) GetExperimentId() string {
+	if x != nil {
+		return x.ExperimentId
+	}
+	return ""
+}
+
+func (x *CancelExperimentResponse) GetStatus() string {
+	if x != nil {
+		return x.Status
+	}
+	return ""
+}
+
+func (x *CancelExperimentResponse) GetMessage() string {
+	if x != nil {
+		return x.Message
+	}
+	return ""
+}
+
 type GetExperimentRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	ModelHash     string                 `protobuf:"bytes,1,opt,name=model_hash,json=modelHash,proto3" json:"model_hash,omitempty"`
@@ -464,7 +592,7 @@ type GetExperimentRequest struct {
 
 func (x *GetExperimentRequest) Reset() {
 	*x = GetExperimentRequest{}
-	mi := &file_controlplane_v1_controlplane_proto_msgTypes[6]
+	mi := &file_controlplane_v1_controlplane_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -476,7 +604,7 @@ func (x *GetExperimentRequest) String() string {
 func (*GetExperimentRequest) ProtoMessage() {}
 
 func (x *GetExperimentRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_controlplane_v1_controlplane_proto_msgTypes[6]
+	mi := &file_controlplane_v1_controlplane_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -489,7 +617,7 @@ func (x *GetExperimentRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetExperimentRequest.ProtoReflect.Descriptor instead.
 func (*GetExperimentRequest) Descriptor() ([]byte, []int) {
-	return file_controlplane_v1_controlplane_proto_rawDescGZIP(), []int{6}
+	return file_controlplane_v1_controlplane_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *GetExperimentRequest) GetModelHash() string {
@@ -529,7 +657,7 @@ type ExperimentBatchStatus struct {
 
 func (x *ExperimentBatchStatus) Reset() {
 	*x = ExperimentBatchStatus{}
-	mi := &file_controlplane_v1_controlplane_proto_msgTypes[7]
+	mi := &file_controlplane_v1_controlplane_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -541,7 +669,7 @@ func (x *ExperimentBatchStatus) String() string {
 func (*ExperimentBatchStatus) ProtoMessage() {}
 
 func (x *ExperimentBatchStatus) ProtoReflect() protoreflect.Message {
-	mi := &file_controlplane_v1_controlplane_proto_msgTypes[7]
+	mi := &file_controlplane_v1_controlplane_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -554,7 +682,7 @@ func (x *ExperimentBatchStatus) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExperimentBatchStatus.ProtoReflect.Descriptor instead.
 func (*ExperimentBatchStatus) Descriptor() ([]byte, []int) {
-	return file_controlplane_v1_controlplane_proto_rawDescGZIP(), []int{7}
+	return file_controlplane_v1_controlplane_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *ExperimentBatchStatus) GetBatchId() string {
@@ -679,7 +807,7 @@ type ModelArtifact struct {
 
 func (x *ModelArtifact) Reset() {
 	*x = ModelArtifact{}
-	mi := &file_controlplane_v1_controlplane_proto_msgTypes[8]
+	mi := &file_controlplane_v1_controlplane_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -691,7 +819,7 @@ func (x *ModelArtifact) String() string {
 func (*ModelArtifact) ProtoMessage() {}
 
 func (x *ModelArtifact) ProtoReflect() protoreflect.Message {
-	mi := &file_controlplane_v1_controlplane_proto_msgTypes[8]
+	mi := &file_controlplane_v1_controlplane_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -704,7 +832,7 @@ func (x *ModelArtifact) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ModelArtifact.ProtoReflect.Descriptor instead.
 func (*ModelArtifact) Descriptor() ([]byte, []int) {
-	return file_controlplane_v1_controlplane_proto_rawDescGZIP(), []int{8}
+	return file_controlplane_v1_controlplane_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *ModelArtifact) GetModelHash() string {
@@ -779,7 +907,7 @@ type RegisterNodeRequest struct {
 
 func (x *RegisterNodeRequest) Reset() {
 	*x = RegisterNodeRequest{}
-	mi := &file_controlplane_v1_controlplane_proto_msgTypes[9]
+	mi := &file_controlplane_v1_controlplane_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -791,7 +919,7 @@ func (x *RegisterNodeRequest) String() string {
 func (*RegisterNodeRequest) ProtoMessage() {}
 
 func (x *RegisterNodeRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_controlplane_v1_controlplane_proto_msgTypes[9]
+	mi := &file_controlplane_v1_controlplane_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -804,7 +932,7 @@ func (x *RegisterNodeRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RegisterNodeRequest.ProtoReflect.Descriptor instead.
 func (*RegisterNodeRequest) Descriptor() ([]byte, []int) {
-	return file_controlplane_v1_controlplane_proto_rawDescGZIP(), []int{9}
+	return file_controlplane_v1_controlplane_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *RegisterNodeRequest) GetNode() *v1.NodeStatus {
@@ -824,7 +952,7 @@ type RegisterNodeResponse struct {
 
 func (x *RegisterNodeResponse) Reset() {
 	*x = RegisterNodeResponse{}
-	mi := &file_controlplane_v1_controlplane_proto_msgTypes[10]
+	mi := &file_controlplane_v1_controlplane_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -836,7 +964,7 @@ func (x *RegisterNodeResponse) String() string {
 func (*RegisterNodeResponse) ProtoMessage() {}
 
 func (x *RegisterNodeResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_controlplane_v1_controlplane_proto_msgTypes[10]
+	mi := &file_controlplane_v1_controlplane_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -849,7 +977,7 @@ func (x *RegisterNodeResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RegisterNodeResponse.ProtoReflect.Descriptor instead.
 func (*RegisterNodeResponse) Descriptor() ([]byte, []int) {
-	return file_controlplane_v1_controlplane_proto_rawDescGZIP(), []int{10}
+	return file_controlplane_v1_controlplane_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *RegisterNodeResponse) GetAccepted() bool {
@@ -876,7 +1004,7 @@ type NodeHeartbeat struct {
 
 func (x *NodeHeartbeat) Reset() {
 	*x = NodeHeartbeat{}
-	mi := &file_controlplane_v1_controlplane_proto_msgTypes[11]
+	mi := &file_controlplane_v1_controlplane_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -888,7 +1016,7 @@ func (x *NodeHeartbeat) String() string {
 func (*NodeHeartbeat) ProtoMessage() {}
 
 func (x *NodeHeartbeat) ProtoReflect() protoreflect.Message {
-	mi := &file_controlplane_v1_controlplane_proto_msgTypes[11]
+	mi := &file_controlplane_v1_controlplane_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -901,7 +1029,7 @@ func (x *NodeHeartbeat) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use NodeHeartbeat.ProtoReflect.Descriptor instead.
 func (*NodeHeartbeat) Descriptor() ([]byte, []int) {
-	return file_controlplane_v1_controlplane_proto_rawDescGZIP(), []int{11}
+	return file_controlplane_v1_controlplane_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *NodeHeartbeat) GetNode() *v1.NodeStatus {
@@ -928,7 +1056,7 @@ type HeartbeatResponse struct {
 
 func (x *HeartbeatResponse) Reset() {
 	*x = HeartbeatResponse{}
-	mi := &file_controlplane_v1_controlplane_proto_msgTypes[12]
+	mi := &file_controlplane_v1_controlplane_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -940,7 +1068,7 @@ func (x *HeartbeatResponse) String() string {
 func (*HeartbeatResponse) ProtoMessage() {}
 
 func (x *HeartbeatResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_controlplane_v1_controlplane_proto_msgTypes[12]
+	mi := &file_controlplane_v1_controlplane_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -953,7 +1081,7 @@ func (x *HeartbeatResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HeartbeatResponse.ProtoReflect.Descriptor instead.
 func (*HeartbeatResponse) Descriptor() ([]byte, []int) {
-	return file_controlplane_v1_controlplane_proto_rawDescGZIP(), []int{12}
+	return file_controlplane_v1_controlplane_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *HeartbeatResponse) GetOk() bool {
@@ -980,7 +1108,7 @@ type ReportExperimentResultRequest struct {
 
 func (x *ReportExperimentResultRequest) Reset() {
 	*x = ReportExperimentResultRequest{}
-	mi := &file_controlplane_v1_controlplane_proto_msgTypes[13]
+	mi := &file_controlplane_v1_controlplane_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -992,7 +1120,7 @@ func (x *ReportExperimentResultRequest) String() string {
 func (*ReportExperimentResultRequest) ProtoMessage() {}
 
 func (x *ReportExperimentResultRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_controlplane_v1_controlplane_proto_msgTypes[13]
+	mi := &file_controlplane_v1_controlplane_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1005,7 +1133,7 @@ func (x *ReportExperimentResultRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReportExperimentResultRequest.ProtoReflect.Descriptor instead.
 func (*ReportExperimentResultRequest) Descriptor() ([]byte, []int) {
-	return file_controlplane_v1_controlplane_proto_rawDescGZIP(), []int{13}
+	return file_controlplane_v1_controlplane_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *ReportExperimentResultRequest) GetNodeId() string {
@@ -1032,7 +1160,7 @@ type ReportExperimentResultResponse struct {
 
 func (x *ReportExperimentResultResponse) Reset() {
 	*x = ReportExperimentResultResponse{}
-	mi := &file_controlplane_v1_controlplane_proto_msgTypes[14]
+	mi := &file_controlplane_v1_controlplane_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1044,7 +1172,7 @@ func (x *ReportExperimentResultResponse) String() string {
 func (*ReportExperimentResultResponse) ProtoMessage() {}
 
 func (x *ReportExperimentResultResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_controlplane_v1_controlplane_proto_msgTypes[14]
+	mi := &file_controlplane_v1_controlplane_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1057,7 +1185,7 @@ func (x *ReportExperimentResultResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReportExperimentResultResponse.ProtoReflect.Descriptor instead.
 func (*ReportExperimentResultResponse) Descriptor() ([]byte, []int) {
-	return file_controlplane_v1_controlplane_proto_rawDescGZIP(), []int{14}
+	return file_controlplane_v1_controlplane_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *ReportExperimentResultResponse) GetOk() bool {
@@ -1083,7 +1211,7 @@ type ListNodesRequest struct {
 
 func (x *ListNodesRequest) Reset() {
 	*x = ListNodesRequest{}
-	mi := &file_controlplane_v1_controlplane_proto_msgTypes[15]
+	mi := &file_controlplane_v1_controlplane_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1095,7 +1223,7 @@ func (x *ListNodesRequest) String() string {
 func (*ListNodesRequest) ProtoMessage() {}
 
 func (x *ListNodesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_controlplane_v1_controlplane_proto_msgTypes[15]
+	mi := &file_controlplane_v1_controlplane_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1108,7 +1236,7 @@ func (x *ListNodesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListNodesRequest.ProtoReflect.Descriptor instead.
 func (*ListNodesRequest) Descriptor() ([]byte, []int) {
-	return file_controlplane_v1_controlplane_proto_rawDescGZIP(), []int{15}
+	return file_controlplane_v1_controlplane_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *ListNodesRequest) GetStatus() string {
@@ -1127,7 +1255,7 @@ type ListNodesResponse struct {
 
 func (x *ListNodesResponse) Reset() {
 	*x = ListNodesResponse{}
-	mi := &file_controlplane_v1_controlplane_proto_msgTypes[16]
+	mi := &file_controlplane_v1_controlplane_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1139,7 +1267,7 @@ func (x *ListNodesResponse) String() string {
 func (*ListNodesResponse) ProtoMessage() {}
 
 func (x *ListNodesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_controlplane_v1_controlplane_proto_msgTypes[16]
+	mi := &file_controlplane_v1_controlplane_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1152,7 +1280,7 @@ func (x *ListNodesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListNodesResponse.ProtoReflect.Descriptor instead.
 func (*ListNodesResponse) Descriptor() ([]byte, []int) {
-	return file_controlplane_v1_controlplane_proto_rawDescGZIP(), []int{16}
+	return file_controlplane_v1_controlplane_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *ListNodesResponse) GetNodes() []*v1.NodeStatus {
@@ -1203,7 +1331,18 @@ const file_controlplane_v1_controlplane_proto_rawDesc = "" +
 	"\rexperiment_id\x18\x02 \x01(\tR\fexperimentId\x12\x16\n" +
 	"\x06status\x18\x03 \x01(\tR\x06status\"6\n" +
 	"\x19GetExperimentBatchRequest\x12\x19\n" +
-	"\bbatch_id\x18\x01 \x01(\tR\abatchId\"Z\n" +
+	"\bbatch_id\x18\x01 \x01(\tR\abatchId\"]\n" +
+	"\x17CancelExperimentRequest\x12\x1d\n" +
+	"\n" +
+	"model_hash\x18\x01 \x01(\tR\tmodelHash\x12#\n" +
+	"\rexperiment_id\x18\x02 \x01(\tR\fexperimentId\"\xac\x01\n" +
+	"\x18CancelExperimentResponse\x12\x1a\n" +
+	"\bcanceled\x18\x01 \x01(\bR\bcanceled\x12\x1d\n" +
+	"\n" +
+	"model_hash\x18\x02 \x01(\tR\tmodelHash\x12#\n" +
+	"\rexperiment_id\x18\x03 \x01(\tR\fexperimentId\x12\x16\n" +
+	"\x06status\x18\x04 \x01(\tR\x06status\x12\x18\n" +
+	"\amessage\x18\x05 \x01(\tR\amessage\"Z\n" +
 	"\x14GetExperimentRequest\x12\x1d\n" +
 	"\n" +
 	"model_hash\x18\x01 \x01(\tR\tmodelHash\x12#\n" +
@@ -1259,11 +1398,12 @@ const file_controlplane_v1_controlplane_proto_rawDesc = "" +
 	"\x10ListNodesRequest\x12\x16\n" +
 	"\x06status\x18\x01 \x01(\tR\x06status\"D\n" +
 	"\x11ListNodesResponse\x12/\n" +
-	"\x05nodes\x18\x01 \x03(\v2\x19.dispatcher.v1.NodeStatusR\x05nodes2\xa4\x03\n" +
+	"\x05nodes\x18\x01 \x03(\v2\x19.dispatcher.v1.NodeStatusR\x05nodes2\x8d\x04\n" +
 	"\x13ControlPlaneService\x12v\n" +
 	"\x15SubmitExperimentBatch\x12-.controlplane.v1.SubmitExperimentBatchRequest\x1a..controlplane.v1.SubmitExperimentBatchResponse\x12h\n" +
 	"\x12GetExperimentBatch\x12*.controlplane.v1.GetExperimentBatchRequest\x1a&.controlplane.v1.ExperimentBatchStatus\x12W\n" +
-	"\rGetExperiment\x12%.controlplane.v1.GetExperimentRequest\x1a\x1f.dispatcher.v1.ExperimentStatus\x12R\n" +
+	"\rGetExperiment\x12%.controlplane.v1.GetExperimentRequest\x1a\x1f.dispatcher.v1.ExperimentStatus\x12g\n" +
+	"\x10CancelExperiment\x12(.controlplane.v1.CancelExperimentRequest\x1a).controlplane.v1.CancelExperimentResponse\x12R\n" +
 	"\tListNodes\x12!.controlplane.v1.ListNodesRequest\x1a\".controlplane.v1.ListNodesResponse2\xc6\x02\n" +
 	"\x17ControlPlaneNodeService\x12[\n" +
 	"\fRegisterNode\x12$.controlplane.v1.RegisterNodeRequest\x1a%.controlplane.v1.RegisterNodeResponse\x12S\n" +
@@ -1282,7 +1422,7 @@ func file_controlplane_v1_controlplane_proto_rawDescGZIP() []byte {
 	return file_controlplane_v1_controlplane_proto_rawDescData
 }
 
-var file_controlplane_v1_controlplane_proto_msgTypes = make([]protoimpl.MessageInfo, 17)
+var file_controlplane_v1_controlplane_proto_msgTypes = make([]protoimpl.MessageInfo, 19)
 var file_controlplane_v1_controlplane_proto_goTypes = []any{
 	(*SubmitExperimentBatchRequest)(nil),   // 0: controlplane.v1.SubmitExperimentBatchRequest
 	(*ExperimentCommonConfig)(nil),         // 1: controlplane.v1.ExperimentCommonConfig
@@ -1290,54 +1430,58 @@ var file_controlplane_v1_controlplane_proto_goTypes = []any{
 	(*SubmitExperimentBatchResponse)(nil),  // 3: controlplane.v1.SubmitExperimentBatchResponse
 	(*SubmittedExperiment)(nil),            // 4: controlplane.v1.SubmittedExperiment
 	(*GetExperimentBatchRequest)(nil),      // 5: controlplane.v1.GetExperimentBatchRequest
-	(*GetExperimentRequest)(nil),           // 6: controlplane.v1.GetExperimentRequest
-	(*ExperimentBatchStatus)(nil),          // 7: controlplane.v1.ExperimentBatchStatus
-	(*ModelArtifact)(nil),                  // 8: controlplane.v1.ModelArtifact
-	(*RegisterNodeRequest)(nil),            // 9: controlplane.v1.RegisterNodeRequest
-	(*RegisterNodeResponse)(nil),           // 10: controlplane.v1.RegisterNodeResponse
-	(*NodeHeartbeat)(nil),                  // 11: controlplane.v1.NodeHeartbeat
-	(*HeartbeatResponse)(nil),              // 12: controlplane.v1.HeartbeatResponse
-	(*ReportExperimentResultRequest)(nil),  // 13: controlplane.v1.ReportExperimentResultRequest
-	(*ReportExperimentResultResponse)(nil), // 14: controlplane.v1.ReportExperimentResultResponse
-	(*ListNodesRequest)(nil),               // 15: controlplane.v1.ListNodesRequest
-	(*ListNodesResponse)(nil),              // 16: controlplane.v1.ListNodesResponse
-	(*v1.StopRule)(nil),                    // 17: dispatcher.v1.StopRule
-	(*v1.SetVar)(nil),                      // 18: dispatcher.v1.SetVar
-	(*v1.ExperimentStatus)(nil),            // 19: dispatcher.v1.ExperimentStatus
-	(*v1.ArtifactRef)(nil),                 // 20: dispatcher.v1.ArtifactRef
-	(*v1.NodeStatus)(nil),                  // 21: dispatcher.v1.NodeStatus
+	(*CancelExperimentRequest)(nil),        // 6: controlplane.v1.CancelExperimentRequest
+	(*CancelExperimentResponse)(nil),       // 7: controlplane.v1.CancelExperimentResponse
+	(*GetExperimentRequest)(nil),           // 8: controlplane.v1.GetExperimentRequest
+	(*ExperimentBatchStatus)(nil),          // 9: controlplane.v1.ExperimentBatchStatus
+	(*ModelArtifact)(nil),                  // 10: controlplane.v1.ModelArtifact
+	(*RegisterNodeRequest)(nil),            // 11: controlplane.v1.RegisterNodeRequest
+	(*RegisterNodeResponse)(nil),           // 12: controlplane.v1.RegisterNodeResponse
+	(*NodeHeartbeat)(nil),                  // 13: controlplane.v1.NodeHeartbeat
+	(*HeartbeatResponse)(nil),              // 14: controlplane.v1.HeartbeatResponse
+	(*ReportExperimentResultRequest)(nil),  // 15: controlplane.v1.ReportExperimentResultRequest
+	(*ReportExperimentResultResponse)(nil), // 16: controlplane.v1.ReportExperimentResultResponse
+	(*ListNodesRequest)(nil),               // 17: controlplane.v1.ListNodesRequest
+	(*ListNodesResponse)(nil),              // 18: controlplane.v1.ListNodesResponse
+	(*v1.StopRule)(nil),                    // 19: dispatcher.v1.StopRule
+	(*v1.SetVar)(nil),                      // 20: dispatcher.v1.SetVar
+	(*v1.ExperimentStatus)(nil),            // 21: dispatcher.v1.ExperimentStatus
+	(*v1.ArtifactRef)(nil),                 // 22: dispatcher.v1.ArtifactRef
+	(*v1.NodeStatus)(nil),                  // 23: dispatcher.v1.NodeStatus
 }
 var file_controlplane_v1_controlplane_proto_depIdxs = []int32{
 	1,  // 0: controlplane.v1.SubmitExperimentBatchRequest.common:type_name -> controlplane.v1.ExperimentCommonConfig
 	2,  // 1: controlplane.v1.SubmitExperimentBatchRequest.experiments:type_name -> controlplane.v1.ExperimentParams
-	17, // 2: controlplane.v1.ExperimentCommonConfig.stop_rule:type_name -> dispatcher.v1.StopRule
-	18, // 3: controlplane.v1.ExperimentParams.set_vars:type_name -> dispatcher.v1.SetVar
+	19, // 2: controlplane.v1.ExperimentCommonConfig.stop_rule:type_name -> dispatcher.v1.StopRule
+	20, // 3: controlplane.v1.ExperimentParams.set_vars:type_name -> dispatcher.v1.SetVar
 	4,  // 4: controlplane.v1.SubmitExperimentBatchResponse.experiments:type_name -> controlplane.v1.SubmittedExperiment
-	8,  // 5: controlplane.v1.ExperimentBatchStatus.artifact:type_name -> controlplane.v1.ModelArtifact
-	19, // 6: controlplane.v1.ExperimentBatchStatus.experiments:type_name -> dispatcher.v1.ExperimentStatus
-	20, // 7: controlplane.v1.ModelArtifact.source:type_name -> dispatcher.v1.ArtifactRef
-	20, // 8: controlplane.v1.ModelArtifact.binary:type_name -> dispatcher.v1.ArtifactRef
-	20, // 9: controlplane.v1.ModelArtifact.build_log:type_name -> dispatcher.v1.ArtifactRef
-	21, // 10: controlplane.v1.RegisterNodeRequest.node:type_name -> dispatcher.v1.NodeStatus
-	21, // 11: controlplane.v1.NodeHeartbeat.node:type_name -> dispatcher.v1.NodeStatus
-	19, // 12: controlplane.v1.ReportExperimentResultRequest.result:type_name -> dispatcher.v1.ExperimentStatus
-	21, // 13: controlplane.v1.ListNodesResponse.nodes:type_name -> dispatcher.v1.NodeStatus
+	10, // 5: controlplane.v1.ExperimentBatchStatus.artifact:type_name -> controlplane.v1.ModelArtifact
+	21, // 6: controlplane.v1.ExperimentBatchStatus.experiments:type_name -> dispatcher.v1.ExperimentStatus
+	22, // 7: controlplane.v1.ModelArtifact.source:type_name -> dispatcher.v1.ArtifactRef
+	22, // 8: controlplane.v1.ModelArtifact.binary:type_name -> dispatcher.v1.ArtifactRef
+	22, // 9: controlplane.v1.ModelArtifact.build_log:type_name -> dispatcher.v1.ArtifactRef
+	23, // 10: controlplane.v1.RegisterNodeRequest.node:type_name -> dispatcher.v1.NodeStatus
+	23, // 11: controlplane.v1.NodeHeartbeat.node:type_name -> dispatcher.v1.NodeStatus
+	21, // 12: controlplane.v1.ReportExperimentResultRequest.result:type_name -> dispatcher.v1.ExperimentStatus
+	23, // 13: controlplane.v1.ListNodesResponse.nodes:type_name -> dispatcher.v1.NodeStatus
 	0,  // 14: controlplane.v1.ControlPlaneService.SubmitExperimentBatch:input_type -> controlplane.v1.SubmitExperimentBatchRequest
 	5,  // 15: controlplane.v1.ControlPlaneService.GetExperimentBatch:input_type -> controlplane.v1.GetExperimentBatchRequest
-	6,  // 16: controlplane.v1.ControlPlaneService.GetExperiment:input_type -> controlplane.v1.GetExperimentRequest
-	15, // 17: controlplane.v1.ControlPlaneService.ListNodes:input_type -> controlplane.v1.ListNodesRequest
-	9,  // 18: controlplane.v1.ControlPlaneNodeService.RegisterNode:input_type -> controlplane.v1.RegisterNodeRequest
-	11, // 19: controlplane.v1.ControlPlaneNodeService.SendHeartbeat:input_type -> controlplane.v1.NodeHeartbeat
-	13, // 20: controlplane.v1.ControlPlaneNodeService.ReportExperimentResult:input_type -> controlplane.v1.ReportExperimentResultRequest
-	3,  // 21: controlplane.v1.ControlPlaneService.SubmitExperimentBatch:output_type -> controlplane.v1.SubmitExperimentBatchResponse
-	7,  // 22: controlplane.v1.ControlPlaneService.GetExperimentBatch:output_type -> controlplane.v1.ExperimentBatchStatus
-	19, // 23: controlplane.v1.ControlPlaneService.GetExperiment:output_type -> dispatcher.v1.ExperimentStatus
-	16, // 24: controlplane.v1.ControlPlaneService.ListNodes:output_type -> controlplane.v1.ListNodesResponse
-	10, // 25: controlplane.v1.ControlPlaneNodeService.RegisterNode:output_type -> controlplane.v1.RegisterNodeResponse
-	12, // 26: controlplane.v1.ControlPlaneNodeService.SendHeartbeat:output_type -> controlplane.v1.HeartbeatResponse
-	14, // 27: controlplane.v1.ControlPlaneNodeService.ReportExperimentResult:output_type -> controlplane.v1.ReportExperimentResultResponse
-	21, // [21:28] is the sub-list for method output_type
-	14, // [14:21] is the sub-list for method input_type
+	8,  // 16: controlplane.v1.ControlPlaneService.GetExperiment:input_type -> controlplane.v1.GetExperimentRequest
+	6,  // 17: controlplane.v1.ControlPlaneService.CancelExperiment:input_type -> controlplane.v1.CancelExperimentRequest
+	17, // 18: controlplane.v1.ControlPlaneService.ListNodes:input_type -> controlplane.v1.ListNodesRequest
+	11, // 19: controlplane.v1.ControlPlaneNodeService.RegisterNode:input_type -> controlplane.v1.RegisterNodeRequest
+	13, // 20: controlplane.v1.ControlPlaneNodeService.SendHeartbeat:input_type -> controlplane.v1.NodeHeartbeat
+	15, // 21: controlplane.v1.ControlPlaneNodeService.ReportExperimentResult:input_type -> controlplane.v1.ReportExperimentResultRequest
+	3,  // 22: controlplane.v1.ControlPlaneService.SubmitExperimentBatch:output_type -> controlplane.v1.SubmitExperimentBatchResponse
+	9,  // 23: controlplane.v1.ControlPlaneService.GetExperimentBatch:output_type -> controlplane.v1.ExperimentBatchStatus
+	21, // 24: controlplane.v1.ControlPlaneService.GetExperiment:output_type -> dispatcher.v1.ExperimentStatus
+	7,  // 25: controlplane.v1.ControlPlaneService.CancelExperiment:output_type -> controlplane.v1.CancelExperimentResponse
+	18, // 26: controlplane.v1.ControlPlaneService.ListNodes:output_type -> controlplane.v1.ListNodesResponse
+	12, // 27: controlplane.v1.ControlPlaneNodeService.RegisterNode:output_type -> controlplane.v1.RegisterNodeResponse
+	14, // 28: controlplane.v1.ControlPlaneNodeService.SendHeartbeat:output_type -> controlplane.v1.HeartbeatResponse
+	16, // 29: controlplane.v1.ControlPlaneNodeService.ReportExperimentResult:output_type -> controlplane.v1.ReportExperimentResultResponse
+	22, // [22:30] is the sub-list for method output_type
+	14, // [14:22] is the sub-list for method input_type
 	14, // [14:14] is the sub-list for extension type_name
 	14, // [14:14] is the sub-list for extension extendee
 	0,  // [0:14] is the sub-list for field type_name
@@ -1354,7 +1498,7 @@ func file_controlplane_v1_controlplane_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_controlplane_v1_controlplane_proto_rawDesc), len(file_controlplane_v1_controlplane_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   17,
+			NumMessages:   19,
 			NumExtensions: 0,
 			NumServices:   2,
 		},

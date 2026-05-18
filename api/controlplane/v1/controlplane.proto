@@ -10,6 +10,7 @@ service ControlPlaneService {
   rpc SubmitExperimentBatch(SubmitExperimentBatchRequest) returns (SubmitExperimentBatchResponse);
   rpc GetExperimentBatch(GetExperimentBatchRequest) returns (ExperimentBatchStatus);
   rpc GetExperiment(GetExperimentRequest) returns (dispatcher.v1.ExperimentStatus);
+  rpc CancelExperiment(CancelExperimentRequest) returns (CancelExperimentResponse);
   rpc ListNodes(ListNodesRequest) returns (ListNodesResponse);
 }
 
@@ -72,6 +73,19 @@ message SubmittedExperiment {
 
 message GetExperimentBatchRequest {
   string batch_id = 1;
+}
+
+message CancelExperimentRequest {
+  string model_hash = 1;
+  string experiment_id = 2;
+}
+
+message CancelExperimentResponse {
+  bool canceled = 1;
+  string model_hash = 2;
+  string experiment_id = 3;
+  string status = 4;
+  string message = 5;
 }
 
 message GetExperimentRequest {

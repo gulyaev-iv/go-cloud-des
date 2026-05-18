@@ -23,6 +23,7 @@ const (
 	ControlPlaneService_SubmitExperimentBatch_FullMethodName = "/controlplane.v1.ControlPlaneService/SubmitExperimentBatch"
 	ControlPlaneService_GetExperimentBatch_FullMethodName    = "/controlplane.v1.ControlPlaneService/GetExperimentBatch"
 	ControlPlaneService_GetExperiment_FullMethodName         = "/controlplane.v1.ControlPlaneService/GetExperiment"
+	ControlPlaneService_CancelExperiment_FullMethodName      = "/controlplane.v1.ControlPlaneService/CancelExperiment"
 	ControlPlaneService_ListNodes_FullMethodName             = "/controlplane.v1.ControlPlaneService/ListNodes"
 )
 
@@ -33,6 +34,7 @@ type ControlPlaneServiceClient interface {
 	SubmitExperimentBatch(ctx context.Context, in *SubmitExperimentBatchRequest, opts ...grpc.CallOption) (*SubmitExperimentBatchResponse, error)
 	GetExperimentBatch(ctx context.Context, in *GetExperimentBatchRequest, opts ...grpc.CallOption) (*ExperimentBatchStatus, error)
 	GetExperiment(ctx context.Context, in *GetExperimentRequest, opts ...grpc.CallOption) (*v1.ExperimentStatus, error)
+	CancelExperiment(ctx context.Context, in *CancelExperimentRequest, opts ...grpc.CallOption) (*CancelExperimentResponse, error)
 	ListNodes(ctx context.Context, in *ListNodesRequest, opts ...grpc.CallOption) (*ListNodesResponse, error)
 }
 
@@ -74,6 +76,16 @@ func (c *controlPlaneServiceClient) GetExperiment(ctx context.Context, in *GetEx
 	return out, nil
 }
 
+func (c *controlPlaneServiceClient) CancelExperiment(ctx context.Context, in *CancelExperimentRequest, opts ...grpc.CallOption) (*CancelExperimentResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CancelExperimentResponse)
+	err := c.cc.Invoke(ctx, ControlPlaneService_CancelExperiment_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *controlPlaneServiceClient) ListNodes(ctx context.Context, in *ListNodesRequest, opts ...grpc.CallOption) (*ListNodesResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ListNodesResponse)
@@ -91,6 +103,7 @@ type ControlPlaneServiceServer interface {
 	SubmitExperimentBatch(context.Context, *SubmitExperimentBatchRequest) (*SubmitExperimentBatchResponse, error)
 	GetExperimentBatch(context.Context, *GetExperimentBatchRequest) (*ExperimentBatchStatus, error)
 	GetExperiment(context.Context, *GetExperimentRequest) (*v1.ExperimentStatus, error)
+	CancelExperiment(context.Context, *CancelExperimentRequest) (*CancelExperimentResponse, error)
 	ListNodes(context.Context, *ListNodesRequest) (*ListNodesResponse, error)
 	mustEmbedUnimplementedControlPlaneServiceServer()
 }
@@ -110,6 +123,9 @@ func (UnimplementedControlPlaneServiceServer) GetExperimentBatch(context.Context
 }
 func (UnimplementedControlPlaneServiceServer) GetExperiment(context.Context, *GetExperimentRequest) (*v1.ExperimentStatus, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetExperiment not implemented")
+}
+func (UnimplementedControlPlaneServiceServer) CancelExperiment(context.Context, *CancelExperimentRequest) (*CancelExperimentResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method CancelExperiment not implemented")
 }
 func (UnimplementedControlPlaneServiceServer) ListNodes(context.Context, *ListNodesRequest) (*ListNodesResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListNodes not implemented")
@@ -189,6 +205,24 @@ func _ControlPlaneService_GetExperiment_Handler(srv interface{}, ctx context.Con
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ControlPlaneService_CancelExperiment_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CancelExperimentRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ControlPlaneServiceServer).CancelExperiment(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ControlPlaneService_CancelExperiment_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ControlPlaneServiceServer).CancelExperiment(ctx, req.(*CancelExperimentRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _ControlPlaneService_ListNodes_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(ListNodesRequest)
 	if err := dec(in); err != nil {
@@ -225,6 +259,10 @@ var ControlPlaneService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetExperiment",
 			Handler:    _ControlPlaneService_GetExperiment_Handler,
+		},
+		{
+			MethodName: "CancelExperiment",
+			Handler:    _ControlPlaneService_CancelExperiment_Handler,
 		},
 		{
 			MethodName: "ListNodes",
