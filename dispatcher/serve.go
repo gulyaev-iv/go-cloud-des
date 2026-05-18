@@ -21,6 +21,9 @@ type ServeConfig struct {
 	NodeID     string
 	ListenAddr string
 
+	ControlPlaneAddr    string
+	ControlPlaneTimeout time.Duration
+
 	Slots       uint64
 	MemoryBytes uint64
 
@@ -67,7 +70,15 @@ func runServe(args []string) error {
 
 	registry := NewRegistry(cfg.Slots, cfg.MemoryBytes)
 	cache := NewModelCache(cfg.WorkDir, store)
-	controlPlane := NoopControlPlaneClient{}
+	controlPlane, err := NewGRPCControlPlaneClient(cfg.ControlPlaneAddr, cfg.NodeID, cfg.ControlPlaneTimeout)
+	if err != nil {
+		return fmt.Errorf("connect controlplane: %w", err)
+	}
+	defer func() {
+		if err := controlPlane.Close(); err != nil {
+			log.Printf("controlplane client close error: %v", err)
+		}
+	}()
 
 	server := NewDispatcherServer(cfg, store, cache, registry, controlPlane)
 	server.StartWorkers(ctx)
@@ -121,6 +132,9 @@ func parseServeConfig(args []string) (ServeConfig, error) {
 	fs.StringVar(&cfg.NodeID, "node-id", "", "dispatcher node id")
 	fs.StringVar(&cfg.ListenAddr, "listen-addr", ":9090", "gRPC listen address")
 
+	fs.StringVar(&cfg.ControlPlaneAddr, "control-plane-addr", "", "control plane gRPC address")
+	fs.DurationVar(&cfg.ControlPlaneTimeout, "control-plane-timeout", 5*time.Second, "control plane gRPC request timeout")
+
 	fs.Uint64Var(&cfg.Slots, "slots", 1, "execution slots")
 	fs.Uint64Var(&cfg.MemoryBytes, "memory-bytes", 0, "total memory available for experiments")
 
@@ -147,6 +161,12 @@ func parseServeConfig(args []string) (ServeConfig, error) {
 	if cfg.ListenAddr == "" {
 		return cfg, fmt.Errorf("empty listen-addr")
 	}
+	if cfg.ControlPlaneAddr == "" {
+		return cfg, fmt.Errorf("empty control-plane-addr")
+	}
+	if cfg.ControlPlaneTimeout <= 0 {
+		return cfg, fmt.Errorf("control-plane-timeout must be > 0")
+	}
 	if cfg.Slots == 0 {
 		return cfg, fmt.Errorf("slots must be > 0")
 	}
@@ -160,9 +180,10 @@ func parseServeConfig(args []string) (ServeConfig, error) {
 	return cfg, nil
 }
 
-func heartbeatLoop(ctx context.Context, cfg ServeConfig, registry *Registry, cache *ModelCache, controlPlane ControlPlaneClient) {
-	snapshot := nodeSnapshot(cfg, registry, cache)
-	_ = controlPlane.RegisterNode(ctx, snapshot)
+func heartbeatLoop(ctx context.Context, cfg ServeConfig, registry *Registry, cache *ModelCache, controlPlane *GRPCControlPlaneClient) {
+	if err := controlPlane.RegisterNode(ctx, nodeStatus(cfg, registry, cache)); err != nil {
+		log.Printf("controlplane register node failed: %v", err)
+	}
 
 	ticker := time.NewTicker(cfg.HeartbeatInterval)
 	defer ticker.Stop()
@@ -173,20 +194,22 @@ func heartbeatLoop(ctx context.Context, cfg ServeConfig, registry *Registry, cac
 			return
 
 		case <-ticker.C:
-			_ = controlPlane.SendHeartbeat(ctx, nodeSnapshot(cfg, registry, cache))
+			if err := controlPlane.SendHeartbeat(ctx, nodeStatus(cfg, registry, cache)); err != nil {
+				log.Printf("controlplane heartbeat failed: %v", err)
+			}
 		}
 	}
 }
 
-func nodeSnapshot(cfg ServeConfig, registry *Registry, cache *ModelCache) NodeSnapshot {
+func nodeStatus(cfg ServeConfig, registry *Registry, cache *ModelCache) *pb.NodeStatus {
 	snap := registry.Snapshot()
 
-	return NodeSnapshot{
-		NodeID:  cfg.NodeID,
+	return &pb.NodeStatus{
+		NodeId:  cfg.NodeID,
 		Address: cfg.ListenAddr,
 
-		RuntimeGOOS:   runtime.GOOS,
-		RuntimeGOARCH: runtime.GOARCH,
+		RuntimeGoos:   runtime.GOOS,
+		RuntimeGoarch: runtime.GOARCH,
 
 		TotalSlots: snap.TotalSlots,
 		UsedSlots:  snap.UsedSlots,

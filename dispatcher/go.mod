@@ -3,7 +3,7 @@ module github.com/gulyaev-iv/go-cloud-des/dispatcher
 go 1.26.2
 
 require (
-	github.com/gulyaev-iv/go-cloud-des/api v0.0.0-20260518013814-6ee53e287166
+	github.com/gulyaev-iv/go-cloud-des/api v0.0.0-20260518035609-32de55c0286f
 	github.com/minio/minio-go/v7 v7.1.0
 	google.golang.org/grpc v1.81.1
 )

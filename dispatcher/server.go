@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"runtime"
 	"strings"
 	"time"
 
@@ -23,7 +22,7 @@ type DispatcherServer struct {
 
 	registry *Registry
 
-	controlPlane ControlPlaneClient
+	controlPlane *GRPCControlPlaneClient
 }
 
 func NewDispatcherServer(
@@ -31,7 +30,7 @@ func NewDispatcherServer(
 	store *S3Store,
 	cache *ModelCache,
 	registry *Registry,
-	controlPlane ControlPlaneClient,
+	controlPlane *GRPCControlPlaneClient,
 ) *DispatcherServer {
 	return &DispatcherServer{
 		cfg:          cfg,
@@ -156,14 +155,6 @@ func (s *DispatcherServer) worker(ctx context.Context, workerID uint64) {
 }
 
 func (s *DispatcherServer) runExperimentTask(workerID uint64, task ExperimentTask) {
-	log.Printf(
-		"experiment status changed: worker_id=%d model_hash=%s experiment_id=%s status=%s",
-		workerID,
-		task.Config.ModelHash,
-		task.Config.ExperimentID,
-		statusRunning,
-	)
-
 	s.registry.SetStatus(task.Config.ModelHash, task.Config.ExperimentID, statusRunning)
 
 	result := executeExperiment(task.Ctx, task.Config, s.store, s.cache)
@@ -194,7 +185,15 @@ func (s *DispatcherServer) runExperimentTask(workerID uint64, task ExperimentTas
 		)
 	}
 
-	_ = s.controlPlane.ReportExperimentResult(context.Background(), finalResult)
+	if err := s.controlPlane.ReportExperimentResult(context.Background(), finalResult); err != nil {
+		log.Printf(
+			"report experiment result failed: model_hash=%s experiment_id=%s status=%s error=%v",
+			finalResult.ModelHash,
+			finalResult.ExperimentID,
+			finalResult.Status,
+			err,
+		)
+	}
 }
 
 func (s *DispatcherServer) StopExperiment(ctx context.Context, req *pb.StopExperimentRequest) (*pb.StopExperimentResponse, error) {
@@ -246,8 +245,7 @@ func (s *DispatcherServer) ListExperiments(ctx context.Context, req *pb.ListExpe
 }
 
 func (s *DispatcherServer) GetNodeStatus(ctx context.Context, req *pb.GetNodeStatusRequest) (*pb.NodeStatus, error) {
-	snap := registrySnapshotToPB(s.cfg, s.registry, s.cache)
-	return snap, nil
+	return nodeStatus(s.cfg, s.registry, s.cache), nil
 }
 
 func (s *DispatcherServer) baseRunConfig() Config {
@@ -358,26 +356,5 @@ func artifactRefToPB(ref *ArtifactRef) *pb.ArtifactRef {
 		Sha256:      ref.SHA256,
 		Size:        ref.Size,
 		ContentType: ref.ContentType,
-	}
-}
-
-func registrySnapshotToPB(cfg ServeConfig, registry *Registry, cache *ModelCache) *pb.NodeStatus {
-	snap := registry.Snapshot()
-
-	return &pb.NodeStatus{
-		NodeId:  cfg.NodeID,
-		Address: cfg.ListenAddr,
-
-		RuntimeGoos:   runtime.GOOS,
-		RuntimeGoarch: runtime.GOARCH,
-
-		TotalSlots: snap.TotalSlots,
-		UsedSlots:  snap.UsedSlots,
-
-		TotalMemoryBytes:    snap.TotalMemoryBytes,
-		ReservedMemoryBytes: snap.ReservedMemoryBytes,
-
-		ActiveExperiments: snap.ActiveExperiments,
-		CachedModels:      uint64(cache.Len()),
 	}
 }
