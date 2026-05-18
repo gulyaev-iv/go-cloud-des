@@ -16,20 +16,21 @@ type ControlPlaneServer struct {
 
 	cfg Config
 
-	repo    *Repository
-	nodes   *NodeRegistry
-	codegen *CodegenClient
+	repo      *Repository
+	nodes     *NodeRegistry
+	codegen   *CodegenClient
+	scheduler *Scheduler
 }
 
-func NewControlPlaneServer(cfg Config, repo *Repository, nodes *NodeRegistry, codegen *CodegenClient) *ControlPlaneServer {
+func NewControlPlaneServer(cfg Config, repo *Repository, nodes *NodeRegistry, codegen *CodegenClient, scheduler *Scheduler) *ControlPlaneServer {
 	return &ControlPlaneServer{
-		cfg:     cfg,
-		repo:    repo,
-		nodes:   nodes,
-		codegen: codegen,
+		cfg:       cfg,
+		repo:      repo,
+		nodes:     nodes,
+		codegen:   codegen,
+		scheduler: scheduler,
 	}
 }
-
 func (s *ControlPlaneServer) GetExperimentBatch(ctx context.Context, req *cpb.GetExperimentBatchRequest) (*cpb.ExperimentBatchStatus, error) {
 	if req.GetBatchId() == "" {
 		return nil, status.Error(codes.InvalidArgument, "empty batch_id")
@@ -157,6 +158,8 @@ func (s *ControlPlaneServer) ReportExperimentResult(ctx context.Context, req *cp
 			Message: "experiment not found",
 		}, nil
 	}
+
+	s.nodes.ReleaseReservation(req.GetNodeId(), result.GetMemoryLimitBytes())
 
 	log.Printf(
 		"experiment result accepted: node_id=%s batch_id=%s model_hash=%s experiment_id=%s status=%s",

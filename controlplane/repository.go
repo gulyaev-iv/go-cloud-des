@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
 
 	cpb "github.com/gulyaev-iv/go-cloud-des/api/controlplane/v1"
 	dpb "github.com/gulyaev-iv/go-cloud-des/api/dispatcher/v1"
@@ -579,7 +580,7 @@ type CreateExperimentBatchInput struct {
 	BuildTimeoutSec int32
 
 	Common      *cpb.ExperimentCommonConfig
-	Experiments []*cpb.ExperimentParams
+	Experiments []*NormalizedExperiment
 }
 
 func (r *Repository) CreateExperimentBatch(ctx context.Context, input CreateExperimentBatchInput) error {
@@ -654,7 +655,7 @@ VALUES (
 	}
 
 	for _, experiment := range input.Experiments {
-		setVarsJSON, err := json.Marshal(experiment.GetSetVars())
+		setVarsJSON, err := json.Marshal(experiment.SetVars)
 		if err != nil {
 			return err
 		}
@@ -671,7 +672,7 @@ INSERT INTO experiments (
 VALUES ($1, $2, $3, $4, $5, $6)
 `,
 			input.ModelHash,
-			experiment.GetExperimentId(),
+			experiment.ExperimentID,
 			input.BatchID,
 			statusPending,
 			setVarsJSON,
@@ -985,4 +986,210 @@ func artifactContentType(ref *CodegenArtifactRef) any {
 	}
 
 	return ref.ContentType
+}
+
+func (r *Repository) ListSchedulableExperimentsByBatch(ctx context.Context, batchID string) ([]*ScheduleExperimentRecord, error) {
+	return r.listSchedulableExperiments(ctx, `
+WHERE
+    b.batch_id = $1
+    AND e.status = $2
+    AND b.status IN ($3, $4)
+    AND a.status = $5
+    AND a.binary_key IS NOT NULL
+    AND a.binary_sha256 IS NOT NULL
+ORDER BY e.experiment_id
+`, batchID, statusPending, statusReady, statusRunning, artifactStatusReady)
+}
+
+func (r *Repository) ListSchedulableExperiments(ctx context.Context, limit int) ([]*ScheduleExperimentRecord, error) {
+	if limit <= 0 {
+		limit = 1000
+	}
+
+	return r.listSchedulableExperiments(ctx, `
+WHERE
+    e.status = $1
+    AND b.status IN ($2, $3)
+    AND a.status = $4
+    AND a.binary_key IS NOT NULL
+    AND a.binary_sha256 IS NOT NULL
+ORDER BY e.created_at, e.experiment_id
+LIMIT $5
+`, statusPending, statusReady, statusRunning, artifactStatusReady, limit)
+}
+
+func (r *Repository) listSchedulableExperiments(ctx context.Context, whereSQL string, args ...any) ([]*ScheduleExperimentRecord, error) {
+	query := `
+SELECT
+    b.batch_id,
+
+    e.model_hash,
+    e.experiment_id,
+
+    b.selected_goos,
+    b.selected_goarch,
+
+    a.binary_key,
+    a.binary_sha256,
+
+    e.set_vars,
+    b.stop_rule,
+
+    b.metrics,
+    b.metric_step,
+    b.store_metrics,
+
+    COALESCE(NULLIF(e.memory_limit_bytes, 0), b.memory_limit_bytes),
+    b.run_timeout_ms,
+
+    e.created_at
+FROM experiments e
+JOIN experiment_batches b
+    ON b.batch_id = e.batch_id
+JOIN model_artifacts a
+    ON a.model_hash = b.model_hash
+    AND a.goos = b.selected_goos
+    AND a.goarch = b.selected_goarch
+` + whereSQL
+
+	rows, err := r.db.Query(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	result := []*ScheduleExperimentRecord{}
+
+	for rows.Next() {
+		var record ScheduleExperimentRecord
+
+		var setVarsJSON []byte
+		var stopRuleJSON []byte
+		var metricsJSON []byte
+		var memoryLimitBytes int64
+		var runTimeoutMs int64
+
+		if err := rows.Scan(
+			&record.BatchID,
+			&record.ModelHash,
+			&record.ExperimentID,
+			&record.GOOS,
+			&record.GOARCH,
+			&record.BinaryKey,
+			&record.BinarySHA256,
+			&setVarsJSON,
+			&stopRuleJSON,
+			&metricsJSON,
+			&record.MetricStep,
+			&record.StoreMetrics,
+			&memoryLimitBytes,
+			&runTimeoutMs,
+			&record.PendingSince,
+		); err != nil {
+			return nil, err
+		}
+
+		record.SetVars = []*dpb.SetVar{}
+		if len(setVarsJSON) > 0 {
+			if err := json.Unmarshal(setVarsJSON, &record.SetVars); err != nil {
+				return nil, err
+			}
+		}
+
+		record.StopRule = &dpb.StopRule{}
+		if err := json.Unmarshal(stopRuleJSON, record.StopRule); err != nil {
+			return nil, err
+		}
+
+		record.Metrics = []string{}
+		if len(metricsJSON) > 0 {
+			if err := json.Unmarshal(metricsJSON, &record.Metrics); err != nil {
+				return nil, err
+			}
+		}
+
+		record.MemoryLimitBytes = int64ToU64(memoryLimitBytes)
+		record.RunTimeoutMs = int64ToU64(runTimeoutMs)
+
+		if record.PendingSince.IsZero() {
+			record.PendingSince = time.Now()
+		}
+
+		result = append(result, &record)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return result, nil
+}
+
+func (r *Repository) TryMarkExperimentStarting(ctx context.Context, modelHash string, experimentID string, nodeID string) (bool, error) {
+	tag, err := r.db.Exec(ctx, `
+UPDATE experiments
+SET
+    status = $3,
+    dispatcher_node_id = $4,
+    error_message = NULL,
+    updated_at = now()
+WHERE
+    model_hash = $1
+    AND experiment_id = $2
+    AND status = $5
+`,
+		modelHash,
+		experimentID,
+		statusStarting,
+		nilIfEmpty(nodeID),
+		statusPending,
+	)
+	if err != nil {
+		return false, err
+	}
+
+	return tag.RowsAffected() == 1, nil
+}
+
+func (r *Repository) MarkExperimentPending(ctx context.Context, modelHash string, experimentID string, message string) error {
+	_, err := r.db.Exec(ctx, `
+UPDATE experiments
+SET
+    status = $3,
+    dispatcher_node_id = NULL,
+    error_message = $4,
+    updated_at = now()
+WHERE
+    model_hash = $1
+    AND experiment_id = $2
+`,
+		modelHash,
+		experimentID,
+		statusPending,
+		nilIfEmpty(message),
+	)
+
+	return err
+}
+
+func (r *Repository) MarkExperimentFailedToStart(ctx context.Context, modelHash string, experimentID string, nodeID string, message string) error {
+	_, err := r.db.Exec(ctx, `
+UPDATE experiments
+SET
+    status = $3,
+    dispatcher_node_id = $4,
+    error_message = $5,
+    updated_at = now()
+WHERE
+    model_hash = $1
+    AND experiment_id = $2
+`,
+		modelHash,
+		experimentID,
+		statusFailed,
+		nilIfEmpty(nodeID),
+		nilIfEmpty(message),
+	)
+
+	return err
 }

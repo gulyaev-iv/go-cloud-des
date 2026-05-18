@@ -118,3 +118,108 @@ func cloneNodeStatus(node *dpb.NodeStatus) *dpb.NodeStatus {
 		CachedModels:        node.GetCachedModels(),
 	}
 }
+
+func (r *NodeRegistry) PickAndReserve(goos string, goarch string, memoryLimitBytes uint64) (*dpb.NodeStatus, bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	goos = strings.TrimSpace(goos)
+	goarch = strings.TrimSpace(goarch)
+	now := time.Now()
+
+	for nodeID, record := range r.nodes {
+		if now.Sub(record.LastSeenAt) > r.ttl {
+			delete(r.nodes, nodeID)
+			continue
+		}
+
+		node := record.Node
+		if node == nil {
+			delete(r.nodes, nodeID)
+			continue
+		}
+
+		if goos != "" && node.GetRuntimeGoos() != goos {
+			continue
+		}
+		if goarch != "" && node.GetRuntimeGoarch() != goarch {
+			continue
+		}
+		if node.GetUsedSlots() >= node.GetTotalSlots() {
+			continue
+		}
+		if !hasEnoughMemory(node, memoryLimitBytes) {
+			continue
+		}
+
+		selected := cloneNodeStatus(node)
+
+		reserved := cloneNodeStatus(node)
+		reserved.UsedSlots++
+		reserved.ActiveExperiments++
+
+		if memoryLimitBytes > 0 {
+			reserved.ReservedMemoryBytes += memoryLimitBytes
+		}
+
+		r.nodes[nodeID] = NodeRecord{
+			Node:       reserved,
+			LastSeenAt: record.LastSeenAt,
+		}
+
+		return selected, true
+	}
+
+	return nil, false
+}
+
+func (r *NodeRegistry) ReleaseReservation(nodeID string, memoryLimitBytes uint64) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	record, ok := r.nodes[nodeID]
+	if !ok || record.Node == nil {
+		return
+	}
+
+	node := cloneNodeStatus(record.Node)
+
+	if node.UsedSlots > 0 {
+		node.UsedSlots--
+	}
+	if node.ActiveExperiments > 0 {
+		node.ActiveExperiments--
+	}
+	if memoryLimitBytes > 0 {
+		if node.ReservedMemoryBytes >= memoryLimitBytes {
+			node.ReservedMemoryBytes -= memoryLimitBytes
+		} else {
+			node.ReservedMemoryBytes = 0
+		}
+	}
+
+	r.nodes[nodeID] = NodeRecord{
+		Node:       node,
+		LastSeenAt: record.LastSeenAt,
+	}
+}
+
+func (r *NodeRegistry) Remove(nodeID string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	delete(r.nodes, nodeID)
+}
+
+func hasEnoughMemory(node *dpb.NodeStatus, memoryLimitBytes uint64) bool {
+	if memoryLimitBytes == 0 {
+		return true
+	}
+
+	total := node.GetTotalMemoryBytes()
+	if total == 0 {
+		return true
+	}
+
+	return node.GetReservedMemoryBytes()+memoryLimitBytes <= total
+}

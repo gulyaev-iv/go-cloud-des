@@ -90,12 +90,21 @@ func (s *ControlPlaneServer) SubmitExperimentBatch(ctx context.Context, req *cpb
 		}
 	}
 
+	if batchStatus == statusReady && s.scheduler != nil {
+		records, err := s.repo.ListSchedulableExperimentsByBatch(ctx, batchID)
+		if err != nil {
+			return nil, status.Error(codes.Internal, err.Error())
+		}
+
+		s.scheduler.Enqueue(records)
+	}
+
 	submitted := make([]*cpb.SubmittedExperiment, 0, len(experiments))
 	for _, experiment := range experiments {
 		submitted = append(submitted, &cpb.SubmittedExperiment{
 			ModelHash:    modelHash,
-			ExperimentId: experiment.GetExperimentId(),
-			Status:       statusSubmitted,
+			ExperimentId: experiment.ExperimentID,
+			Status:       statusPending,
 		})
 	}
 
@@ -121,7 +130,12 @@ func (s *ControlPlaneServer) SubmitExperimentBatch(ctx context.Context, req *cpb
 	}, nil
 }
 
-func normalizeSubmitRequest(req *cpb.SubmitExperimentBatchRequest) (string, []*cpb.ExperimentParams, error) {
+type NormalizedExperiment struct {
+	ExperimentID string
+	SetVars      []*dpb.SetVar
+}
+
+func normalizeSubmitRequest(req *cpb.SubmitExperimentBatchRequest) (string, []*NormalizedExperiment, error) {
 	if req == nil {
 		return "", nil, fmt.Errorf("empty request")
 	}
@@ -148,37 +162,27 @@ func normalizeSubmitRequest(req *cpb.SubmitExperimentBatchRequest) (string, []*c
 		batchID = "batch-" + randomHex(16)
 	}
 
-	experiments := make([]*cpb.ExperimentParams, 0, len(req.GetExperiments()))
-	seenExperimentIDs := make(map[string]bool, len(req.GetExperiments()))
+	experiments := make([]*NormalizedExperiment, 0, len(req.GetExperiments()))
 
 	for i, experiment := range req.GetExperiments() {
 		if experiment == nil {
 			return "", nil, fmt.Errorf("experiment %d is empty", i)
 		}
 
-		normalized := &cpb.ExperimentParams{
-			ExperimentId: strings.TrimSpace(experiment.GetExperimentId()),
+		normalized := &NormalizedExperiment{
+			ExperimentID: fmt.Sprintf("%s-exp-%06d", batchID, i+1),
 			SetVars:      experiment.GetSetVars(),
 		}
 
-		if normalized.ExperimentId == "" {
-			normalized.ExperimentId = fmt.Sprintf("exp-%06d", i+1)
-		}
-
-		if seenExperimentIDs[normalized.ExperimentId] {
-			return "", nil, fmt.Errorf("duplicate experiment_id %q", normalized.ExperimentId)
-		}
-		seenExperimentIDs[normalized.ExperimentId] = true
-
-		for _, setVar := range normalized.GetSetVars() {
+		for _, setVar := range normalized.SetVars {
 			if setVar == nil {
-				return "", nil, fmt.Errorf("experiment %s has empty set_var", normalized.ExperimentId)
+				return "", nil, fmt.Errorf("experiment %s has empty set_var", normalized.ExperimentID)
 			}
 			if strings.TrimSpace(setVar.GetName()) == "" {
-				return "", nil, fmt.Errorf("experiment %s has set_var with empty name", normalized.ExperimentId)
+				return "", nil, fmt.Errorf("experiment %s has set_var with empty name", normalized.ExperimentID)
 			}
 			if strings.TrimSpace(setVar.GetValue()) == "" {
-				return "", nil, fmt.Errorf("experiment %s has set_var %s with empty value", normalized.ExperimentId, setVar.GetName())
+				return "", nil, fmt.Errorf("experiment %s has set_var %s with empty value", normalized.ExperimentID, setVar.GetName())
 			}
 		}
 

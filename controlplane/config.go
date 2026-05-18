@@ -15,6 +15,12 @@ type Config struct {
 
 	NodeTTL time.Duration
 
+	SchedulerInterval        time.Duration
+	DispatcherRequestTimeout time.Duration
+
+	ScaleOutAfter    time.Duration
+	ScaleOutCooldown time.Duration
+
 	NATSURL string
 
 	CodegenStream         string
@@ -37,6 +43,12 @@ func parseConfig(args []string) (Config, error) {
 	fs.StringVar(&cfg.DefaultGOARCH, "default-goarch", "amd64", "default target GOARCH for generated model binaries")
 
 	fs.DurationVar(&cfg.NodeTTL, "node-ttl", 30*time.Second, "dispatcher node TTL after last heartbeat")
+
+	fs.DurationVar(&cfg.SchedulerInterval, "scheduler-interval", time.Second, "scheduler loop interval")
+	fs.DurationVar(&cfg.DispatcherRequestTimeout, "dispatcher-request-timeout", 10*time.Second, "timeout for dispatcher gRPC requests")
+
+	fs.DurationVar(&cfg.ScaleOutAfter, "scale-out-after", 5*time.Second, "request scale out if pending experiments wait longer than this")
+	fs.DurationVar(&cfg.ScaleOutCooldown, "scale-out-cooldown", 30*time.Second, "minimum interval between scale out requests")
 
 	fs.StringVar(&cfg.NATSURL, "nats-url", "nats://localhost:4222", "NATS server URL")
 	fs.StringVar(&cfg.CodegenStream, "codegen-stream", "CODEGEN_TASKS", "JetStream stream name for codegen tasks")
@@ -64,6 +76,18 @@ func parseConfig(args []string) (Config, error) {
 	}
 	if cfg.NodeTTL <= 0 {
 		return cfg, fmt.Errorf("node-ttl must be > 0")
+	}
+	if cfg.SchedulerInterval <= 0 {
+		return cfg, fmt.Errorf("scheduler-interval must be > 0")
+	}
+	if cfg.DispatcherRequestTimeout <= 0 {
+		return cfg, fmt.Errorf("dispatcher-request-timeout must be > 0")
+	}
+	if cfg.ScaleOutAfter <= 0 {
+		return cfg, fmt.Errorf("scale-out-after must be > 0")
+	}
+	if cfg.ScaleOutCooldown <= 0 {
+		return cfg, fmt.Errorf("scale-out-cooldown must be > 0")
 	}
 	if cfg.NATSURL == "" {
 		return cfg, fmt.Errorf("empty nats-url")

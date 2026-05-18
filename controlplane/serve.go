@@ -41,7 +41,18 @@ func runServe(args []string) error {
 	}
 	defer codegen.Close()
 
-	server := NewControlPlaneServer(cfg, repo, nodes, codegen)
+	provisioner := NewLoggingNodeProvisioner()
+	scheduler := NewScheduler(cfg, repo, nodes, provisioner)
+
+	bootstrapRecords, err := repo.ListSchedulableExperiments(ctx, 10000)
+	if err != nil {
+		return err
+	}
+	scheduler.Enqueue(bootstrapRecords)
+
+	go scheduler.Run(ctx)
+
+	server := NewControlPlaneServer(cfg, repo, nodes, codegen, scheduler)
 
 	grpcServer := grpc.NewServer()
 
@@ -63,11 +74,12 @@ func runServe(args []string) error {
 	}()
 
 	log.Printf(
-		"controlplane started: listen=%s default_goos=%s default_goarch=%s node_ttl=%s nats_url=%s codegen_stream=%s codegen_subject=%s",
+		"controlplane started: listen=%s default_goos=%s default_goarch=%s node_ttl=%s scheduler_interval=%s nats_url=%s codegen_stream=%s codegen_subject=%s",
 		cfg.ListenAddr,
 		cfg.DefaultGOOS,
 		cfg.DefaultGOARCH,
 		cfg.NodeTTL,
+		cfg.SchedulerInterval,
 		cfg.NATSURL,
 		cfg.CodegenStream,
 		cfg.CodegenSubject,
