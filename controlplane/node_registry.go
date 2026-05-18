@@ -12,10 +12,15 @@ import (
 type NodeRecord struct {
 	Node       *dpb.NodeStatus
 	LastSeenAt time.Time
+
+	ReservedSlots       uint64
+	ReservedMemoryBytes uint64
+
+	failureCount uint32
 }
 
 type NodeRegistry struct {
-	mu  sync.RWMutex
+	mu  sync.Mutex
 	ttl time.Duration
 
 	nodes map[string]NodeRecord
@@ -48,9 +53,21 @@ func (r *NodeRegistry) Register(node *dpb.NodeStatus) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
+	var reservedSlots, reservedMemory uint64
+	var failureCount uint32
+
+	if existing, ok := r.nodes[node.GetNodeId()]; ok {
+		reservedSlots = existing.ReservedSlots
+		reservedMemory = existing.ReservedMemoryBytes
+		failureCount = existing.failureCount
+	}
+
 	r.nodes[node.GetNodeId()] = NodeRecord{
-		Node:       cloneNodeStatus(node),
-		LastSeenAt: time.Now(),
+		Node:                cloneNodeStatus(node),
+		LastSeenAt:          time.Now(),
+		ReservedSlots:       reservedSlots,
+		ReservedMemoryBytes: reservedMemory,
+		failureCount:        failureCount,
 	}
 
 	return nil
@@ -67,26 +84,37 @@ func (r *NodeRegistry) Heartbeat(node *dpb.NodeStatus) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	r.nodes[node.GetNodeId()] = NodeRecord{
+	existing, ok := r.nodes[node.GetNodeId()]
+
+	updated := NodeRecord{
 		Node:       cloneNodeStatus(node),
 		LastSeenAt: time.Now(),
 	}
 
+	if ok {
+		updated.ReservedSlots = existing.ReservedSlots
+		updated.ReservedMemoryBytes = existing.ReservedMemoryBytes
+		updated.failureCount = existing.failureCount
+	}
+
+	r.nodes[node.GetNodeId()] = updated
+
 	return nil
 }
 
-func (r *NodeRegistry) List(status string) []*dpb.NodeStatus {
+func (r *NodeRegistry) List(status string) (alive []*dpb.NodeStatus, evicted []string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
 	status = strings.ToUpper(strings.TrimSpace(status))
 	now := time.Now()
 
-	result := make([]*dpb.NodeStatus, 0, len(r.nodes))
+	alive = make([]*dpb.NodeStatus, 0, len(r.nodes))
 
 	for nodeID, record := range r.nodes {
 		if now.Sub(record.LastSeenAt) > r.ttl {
 			delete(r.nodes, nodeID)
+			evicted = append(evicted, nodeID)
 			continue
 		}
 
@@ -94,7 +122,24 @@ func (r *NodeRegistry) List(status string) []*dpb.NodeStatus {
 			continue
 		}
 
-		result = append(result, cloneNodeStatus(record.Node))
+		alive = append(alive, cloneNodeStatus(record.Node))
+	}
+
+	return alive, evicted
+}
+
+func (r *NodeRegistry) ActiveNodeIDs() map[string]struct{} {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	now := time.Now()
+	result := make(map[string]struct{}, len(r.nodes))
+
+	for nodeID, record := range r.nodes {
+		if now.Sub(record.LastSeenAt) > r.ttl {
+			continue
+		}
+		result[nodeID] = struct{}{}
 	}
 
 	return result
@@ -145,27 +190,31 @@ func (r *NodeRegistry) PickAndReserve(goos string, goarch string, memoryLimitByt
 		if goarch != "" && node.GetRuntimeGoarch() != goarch {
 			continue
 		}
-		if node.GetUsedSlots() >= node.GetTotalSlots() {
+
+		effectiveUsedSlots := node.GetUsedSlots()
+		if record.ReservedSlots > effectiveUsedSlots {
+			effectiveUsedSlots = record.ReservedSlots
+		}
+		if effectiveUsedSlots >= node.GetTotalSlots() {
 			continue
 		}
-		if !hasEnoughMemory(node, memoryLimitBytes) {
+
+		effectiveReservedMemory := node.GetReservedMemoryBytes()
+		if record.ReservedMemoryBytes > effectiveReservedMemory {
+			effectiveReservedMemory = record.ReservedMemoryBytes
+		}
+		if !hasEnoughMemoryAt(node, effectiveReservedMemory, memoryLimitBytes) {
 			continue
 		}
 
 		selected := cloneNodeStatus(node)
 
-		reserved := cloneNodeStatus(node)
-		reserved.UsedSlots++
-		reserved.ActiveExperiments++
-
+		record.ReservedSlots++
 		if memoryLimitBytes > 0 {
-			reserved.ReservedMemoryBytes += memoryLimitBytes
+			record.ReservedMemoryBytes += memoryLimitBytes
 		}
 
-		r.nodes[nodeID] = NodeRecord{
-			Node:       reserved,
-			LastSeenAt: record.LastSeenAt,
-		}
+		r.nodes[nodeID] = record
 
 		return selected, true
 	}
@@ -178,30 +227,22 @@ func (r *NodeRegistry) ReleaseReservation(nodeID string, memoryLimitBytes uint64
 	defer r.mu.Unlock()
 
 	record, ok := r.nodes[nodeID]
-	if !ok || record.Node == nil {
+	if !ok {
 		return
 	}
 
-	node := cloneNodeStatus(record.Node)
-
-	if node.UsedSlots > 0 {
-		node.UsedSlots--
-	}
-	if node.ActiveExperiments > 0 {
-		node.ActiveExperiments--
+	if record.ReservedSlots > 0 {
+		record.ReservedSlots--
 	}
 	if memoryLimitBytes > 0 {
-		if node.ReservedMemoryBytes >= memoryLimitBytes {
-			node.ReservedMemoryBytes -= memoryLimitBytes
+		if record.ReservedMemoryBytes >= memoryLimitBytes {
+			record.ReservedMemoryBytes -= memoryLimitBytes
 		} else {
-			node.ReservedMemoryBytes = 0
+			record.ReservedMemoryBytes = 0
 		}
 	}
 
-	r.nodes[nodeID] = NodeRecord{
-		Node:       node,
-		LastSeenAt: record.LastSeenAt,
-	}
+	r.nodes[nodeID] = record
 }
 
 func (r *NodeRegistry) Remove(nodeID string) {
@@ -211,7 +252,42 @@ func (r *NodeRegistry) Remove(nodeID string) {
 	delete(r.nodes, nodeID)
 }
 
-func hasEnoughMemory(node *dpb.NodeStatus, memoryLimitBytes uint64) bool {
+func (r *NodeRegistry) MarkNodeFailed(nodeID string, maxFailures uint32) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	record, ok := r.nodes[nodeID]
+	if !ok {
+		return false
+	}
+
+	record.failureCount++
+	r.nodes[nodeID] = record
+
+	if record.failureCount >= maxFailures {
+		delete(r.nodes, nodeID)
+		return true
+	}
+
+	return false
+}
+
+func (r *NodeRegistry) MarkNodeSucceeded(nodeID string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	record, ok := r.nodes[nodeID]
+	if !ok {
+		return
+	}
+	if record.failureCount == 0 {
+		return
+	}
+	record.failureCount = 0
+	r.nodes[nodeID] = record
+}
+
+func hasEnoughMemoryAt(node *dpb.NodeStatus, currentReserved uint64, memoryLimitBytes uint64) bool {
 	if memoryLimitBytes == 0 {
 		return true
 	}
@@ -221,5 +297,31 @@ func hasEnoughMemory(node *dpb.NodeStatus, memoryLimitBytes uint64) bool {
 		return true
 	}
 
-	return node.GetReservedMemoryBytes()+memoryLimitBytes <= total
+	return currentReserved+memoryLimitBytes <= total
+}
+
+func hasEnoughMemory(node *dpb.NodeStatus, memoryLimitBytes uint64) bool {
+	return hasEnoughMemoryAt(node, node.GetReservedMemoryBytes(), memoryLimitBytes)
+}
+
+func (r *NodeRegistry) Get(nodeID string) (*dpb.NodeStatus, bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	record, ok := r.nodes[nodeID]
+	if !ok {
+		return nil, false
+	}
+
+	if time.Since(record.LastSeenAt) > r.ttl {
+		delete(r.nodes, nodeID)
+		return nil, false
+	}
+
+	if record.Node == nil {
+		delete(r.nodes, nodeID)
+		return nil, false
+	}
+
+	return cloneNodeStatus(record.Node), true
 }

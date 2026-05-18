@@ -1193,3 +1193,151 @@ WHERE
 
 	return err
 }
+
+type CancelExperimentRecord struct {
+	BatchID string
+
+	ModelHash    string
+	ExperimentID string
+
+	Status           string
+	DispatcherNodeID string
+
+	MemoryLimitBytes uint64
+}
+
+func (r *Repository) GetExperimentForCancel(ctx context.Context, modelHash string, experimentID string) (*CancelExperimentRecord, bool, error) {
+	var row struct {
+		BatchID string
+
+		ModelHash    string
+		ExperimentID string
+
+		Status           string
+		DispatcherNodeID sql.NullString
+
+		MemoryLimitBytes int64
+	}
+
+	err := r.db.QueryRow(ctx, `
+SELECT
+    batch_id,
+    model_hash,
+    experiment_id,
+    status,
+    dispatcher_node_id,
+    memory_limit_bytes
+FROM experiments
+WHERE model_hash = $1 AND experiment_id = $2
+`, modelHash, experimentID).Scan(
+		&row.BatchID,
+		&row.ModelHash,
+		&row.ExperimentID,
+		&row.Status,
+		&row.DispatcherNodeID,
+		&row.MemoryLimitBytes,
+	)
+
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, false, err
+	}
+
+	return &CancelExperimentRecord{
+		BatchID:          row.BatchID,
+		ModelHash:        row.ModelHash,
+		ExperimentID:     row.ExperimentID,
+		Status:           row.Status,
+		DispatcherNodeID: nullString(row.DispatcherNodeID),
+		MemoryLimitBytes: int64ToU64(row.MemoryLimitBytes),
+	}, true, nil
+}
+
+func (r *Repository) MarkPendingExperimentCanceled(ctx context.Context, modelHash string, experimentID string) (bool, error) {
+	tag, err := r.db.Exec(ctx, `
+UPDATE experiments
+SET
+    status = $3,
+    finish_reason = $4,
+    error_message = NULL,
+    finished_at_unix_ms = $5,
+    updated_at = now()
+WHERE
+    model_hash = $1
+    AND experiment_id = $2
+    AND status = $6
+`,
+		modelHash,
+		experimentID,
+		statusCanceled,
+		"user_canceled",
+		time.Now().UnixMilli(),
+		statusPending,
+	)
+	if err != nil {
+		return false, err
+	}
+
+	return tag.RowsAffected() == 1, nil
+}
+
+type OrphanedExperiment struct {
+	BatchID          string
+	ModelHash        string
+	ExperimentID     string
+	DispatcherNodeID string
+}
+
+func (r *Repository) MarkOrphanedExperimentsFailed(ctx context.Context, activeNodeIDs []string, gracePeriod time.Duration) ([]OrphanedExperiment, error) {
+	cutoff := time.Now().Add(-gracePeriod)
+
+	rows, err := r.db.Query(ctx, `
+UPDATE experiments
+SET
+    status = $4,
+    finish_reason = $5,
+    error_message = $6,
+    finished_at_unix_ms = $7,
+    updated_at = now()
+WHERE
+    status = ANY($1::text[])
+    AND updated_at < $2
+    AND dispatcher_node_id IS NOT NULL
+    AND NOT (dispatcher_node_id = ANY($3::text[]))
+RETURNING batch_id, model_hash, experiment_id, dispatcher_node_id
+`,
+		[]string{statusStarting, statusRunning},
+		cutoff,
+		activeNodeIDs,
+		statusFailed,
+		"node_lost",
+		"dispatcher node lost contact",
+		time.Now().UnixMilli(),
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var result []OrphanedExperiment
+
+	for rows.Next() {
+		var item OrphanedExperiment
+		var nodeID sql.NullString
+
+		if err := rows.Scan(&item.BatchID, &item.ModelHash, &item.ExperimentID, &nodeID); err != nil {
+			return nil, err
+		}
+
+		item.DispatcherNodeID = nullString(nodeID)
+		result = append(result, item)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return result, nil
+}

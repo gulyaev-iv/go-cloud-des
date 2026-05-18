@@ -18,8 +18,9 @@ import (
 )
 
 type ServeConfig struct {
-	NodeID     string
-	ListenAddr string
+	NodeID        string
+	ListenAddr    string
+	AdvertiseAddr string
 
 	ControlPlaneAddr    string
 	ControlPlaneTimeout time.Duration
@@ -39,6 +40,11 @@ type ServeConfig struct {
 	S3Region       string
 	S3Prefix       string
 	S3CreateBucket bool
+
+	ReportJournalDir    string
+	ReportRetryInterval time.Duration
+	ReportSendTimeout   time.Duration
+	DrainTimeout        time.Duration
 }
 
 func runServe(args []string) error {
@@ -70,17 +76,24 @@ func runServe(args []string) error {
 
 	registry := NewRegistry(cfg.Slots, cfg.MemoryBytes)
 	cache := NewModelCache(cfg.WorkDir, store)
+
 	controlPlane, err := NewGRPCControlPlaneClient(cfg.ControlPlaneAddr, cfg.NodeID, cfg.ControlPlaneTimeout)
 	if err != nil {
 		return fmt.Errorf("connect controlplane: %w", err)
 	}
-	defer func() {
-		if err := controlPlane.Close(); err != nil {
-			log.Printf("controlplane client close error: %v", err)
-		}
-	}()
 
-	server := NewDispatcherServer(cfg, store, cache, registry, controlPlane)
+	reporter, err := NewReporter(cfg.ReportJournalDir, controlPlane, cfg.ReportRetryInterval, cfg.ReportSendTimeout)
+	if err != nil {
+		if closeErr := controlPlane.Close(); closeErr != nil {
+			log.Printf("controlplane client close error: %v", closeErr)
+		}
+		return fmt.Errorf("init reporter: %w", err)
+	}
+
+	reporterCtx, reporterCancel := context.WithCancel(context.Background())
+	reporter.Start(reporterCtx)
+
+	server := NewDispatcherServer(cfg, store, cache, registry, controlPlane, reporter)
 	server.StartWorkers(ctx)
 
 	grpcServer := grpc.NewServer()
@@ -89,6 +102,11 @@ func runServe(args []string) error {
 
 	listener, err := net.Listen("tcp", cfg.ListenAddr)
 	if err != nil {
+		reporterCancel()
+		reporter.Stop()
+		if closeErr := controlPlane.Close(); closeErr != nil {
+			log.Printf("controlplane client close error: %v", closeErr)
+		}
 		return err
 	}
 
@@ -100,16 +118,46 @@ func runServe(args []string) error {
 	}()
 
 	log.Printf(
-		"dispatcher started: node_id=%s listen=%s goos=%s goarch=%s slots=%d memory=%d",
+		"dispatcher started: node_id=%s listen=%s advertise=%s goos=%s goarch=%s slots=%d memory=%d journal_dir=%s drain_timeout=%s",
 		cfg.NodeID,
 		cfg.ListenAddr,
+		cfg.AdvertiseAddr,
 		runtime.GOOS,
 		runtime.GOARCH,
 		cfg.Slots,
 		cfg.MemoryBytes,
+		cfg.ReportJournalDir,
+		cfg.DrainTimeout,
 	)
 
 	serveErr := grpcServer.Serve(listener)
+
+	drainCtx, drainCancel := context.WithTimeout(context.Background(), cfg.DrainTimeout)
+
+	workersDone := make(chan struct{})
+	go func() {
+		server.WaitWorkers()
+		close(workersDone)
+	}()
+
+	select {
+	case <-workersDone:
+		log.Printf("workers drained gracefully")
+	case <-drainCtx.Done():
+		cancelled := registry.CancelAll("dispatcher_shutdown")
+		log.Printf("drain timeout exceeded, force-cancelled active experiments: count=%d", cancelled)
+		server.WaitWorkers()
+		log.Printf("workers stopped after force-cancel")
+	}
+
+	drainCancel()
+
+	reporterCancel()
+	reporter.Stop()
+
+	if err := controlPlane.Close(); err != nil {
+		log.Printf("controlplane client close error: %v", err)
+	}
 
 	if cleanupErr := cache.ClearWorkDir(); cleanupErr != nil {
 		log.Printf("cleanup error: %v", cleanupErr)
@@ -131,6 +179,7 @@ func parseServeConfig(args []string) (ServeConfig, error) {
 
 	fs.StringVar(&cfg.NodeID, "node-id", "", "dispatcher node id")
 	fs.StringVar(&cfg.ListenAddr, "listen-addr", ":9090", "gRPC listen address")
+	fs.StringVar(&cfg.AdvertiseAddr, "advertise-addr", "", "dispatcher address advertised to control plane")
 
 	fs.StringVar(&cfg.ControlPlaneAddr, "control-plane-addr", "", "control plane gRPC address")
 	fs.DurationVar(&cfg.ControlPlaneTimeout, "control-plane-timeout", 5*time.Second, "control plane gRPC request timeout")
@@ -151,6 +200,11 @@ func parseServeConfig(args []string) (ServeConfig, error) {
 	fs.StringVar(&cfg.S3Prefix, "s3-prefix", "", "S3 prefix for dispatcher-created objects")
 	fs.BoolVar(&cfg.S3CreateBucket, "s3-create-bucket", true, "create S3 bucket if it does not exist")
 
+	fs.StringVar(&cfg.ReportJournalDir, "report-journal-dir", "./dispatcher-reports", "directory for persistent experiment result journal")
+	fs.DurationVar(&cfg.ReportRetryInterval, "report-retry-interval", 10*time.Second, "interval for retrying unreported experiment results")
+	fs.DurationVar(&cfg.ReportSendTimeout, "report-send-timeout", 5*time.Second, "timeout for a single report attempt")
+	fs.DurationVar(&cfg.DrainTimeout, "drain-timeout", 60*time.Second, "max time to wait for active experiments to finish on shutdown before force-cancelling")
+
 	if err := fs.Parse(args); err != nil {
 		return cfg, err
 	}
@@ -160,6 +214,9 @@ func parseServeConfig(args []string) (ServeConfig, error) {
 	}
 	if cfg.ListenAddr == "" {
 		return cfg, fmt.Errorf("empty listen-addr")
+	}
+	if cfg.AdvertiseAddr == "" {
+		return cfg, fmt.Errorf("empty advertise-addr")
 	}
 	if cfg.ControlPlaneAddr == "" {
 		return cfg, fmt.Errorf("empty control-plane-addr")
@@ -175,6 +232,18 @@ func parseServeConfig(args []string) (ServeConfig, error) {
 	}
 	if cfg.WorkDir == "" {
 		return cfg, fmt.Errorf("empty work-dir")
+	}
+	if cfg.ReportJournalDir == "" {
+		return cfg, fmt.Errorf("empty report-journal-dir")
+	}
+	if cfg.ReportRetryInterval <= 0 {
+		return cfg, fmt.Errorf("report-retry-interval must be > 0")
+	}
+	if cfg.ReportSendTimeout <= 0 {
+		return cfg, fmt.Errorf("report-send-timeout must be > 0")
+	}
+	if cfg.DrainTimeout <= 0 {
+		return cfg, fmt.Errorf("drain-timeout must be > 0")
 	}
 
 	return cfg, nil
@@ -206,7 +275,7 @@ func nodeStatus(cfg ServeConfig, registry *Registry, cache *ModelCache) *pb.Node
 
 	return &pb.NodeStatus{
 		NodeId:  cfg.NodeID,
-		Address: cfg.ListenAddr,
+		Address: cfg.AdvertiseAddr,
 
 		RuntimeGoos:   runtime.GOOS,
 		RuntimeGoarch: runtime.GOARCH,

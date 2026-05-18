@@ -56,3 +56,10 @@ func (c *DispatcherClient) StartExperiment(ctx context.Context, req *dpb.StartEx
 
 	return c.client.StartExperiment(callCtx, req)
 }
+
+func (c *DispatcherClient) StopExperiment(ctx context.Context, req *dpb.StopExperimentRequest) (*dpb.StopExperimentResponse, error) {
+	callCtx, cancel := context.WithTimeout(ctx, c.timeout)
+	defer cancel()
+
+	return c.client.StopExperiment(callCtx, req)
+}

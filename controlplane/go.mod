@@ -3,7 +3,7 @@ module github.com/gulyaev-iv/go-cloud-des/controlplane
 go 1.26.2
 
 require (
-	github.com/gulyaev-iv/go-cloud-des/api v0.0.0-20260518035609-32de55c0286f
+	github.com/gulyaev-iv/go-cloud-des/api v0.0.0-20260518092031-1258d917d073
 	github.com/jackc/pgx/v5 v5.9.2
 	github.com/nats-io/nats.go v1.52.0
 	google.golang.org/grpc v1.81.1

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"sync"
 	"time"
 
 	pb "github.com/gulyaev-iv/go-cloud-des/api/dispatcher/v1"
@@ -23,6 +24,9 @@ type DispatcherServer struct {
 	registry *Registry
 
 	controlPlane *GRPCControlPlaneClient
+	reporter     *Reporter
+
+	workersWG sync.WaitGroup
 }
 
 func NewDispatcherServer(
@@ -31,6 +35,7 @@ func NewDispatcherServer(
 	cache *ModelCache,
 	registry *Registry,
 	controlPlane *GRPCControlPlaneClient,
+	reporter *Reporter,
 ) *DispatcherServer {
 	return &DispatcherServer{
 		cfg:          cfg,
@@ -39,6 +44,7 @@ func NewDispatcherServer(
 		cache:        cache,
 		registry:     registry,
 		controlPlane: controlPlane,
+		reporter:     reporter,
 	}
 }
 
@@ -128,11 +134,18 @@ func (s *DispatcherServer) StartExperiment(ctx context.Context, req *pb.StartExp
 
 func (s *DispatcherServer) StartWorkers(ctx context.Context) {
 	for i := uint64(0); i < s.cfg.Slots; i++ {
+		s.workersWG.Add(1)
 		go s.worker(ctx, i)
 	}
 }
 
+func (s *DispatcherServer) WaitWorkers() {
+	s.workersWG.Wait()
+}
+
 func (s *DispatcherServer) worker(ctx context.Context, workerID uint64) {
+	defer s.workersWG.Done()
+
 	log.Printf("worker started: worker_id=%d", workerID)
 
 	for {
@@ -185,15 +198,7 @@ func (s *DispatcherServer) runExperimentTask(workerID uint64, task ExperimentTas
 		)
 	}
 
-	if err := s.controlPlane.ReportExperimentResult(context.Background(), finalResult); err != nil {
-		log.Printf(
-			"report experiment result failed: model_hash=%s experiment_id=%s status=%s error=%v",
-			finalResult.ModelHash,
-			finalResult.ExperimentID,
-			finalResult.Status,
-			err,
-		)
-	}
+	s.reporter.Submit(finalResult)
 }
 
 func (s *DispatcherServer) StopExperiment(ctx context.Context, req *pb.StopExperimentRequest) (*pb.StopExperimentResponse, error) {

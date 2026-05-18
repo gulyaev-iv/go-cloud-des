@@ -15,6 +15,7 @@ type ExperimentRecord struct {
 
 	MemoryReserved  uint64
 	CancelRequested bool
+	CancelReason    string
 }
 
 type Registry struct {
@@ -111,8 +112,11 @@ func (r *Registry) Cancel(modelHash string, experimentID string) (bool, string) 
 	}
 
 	record.CancelRequested = true
+	if record.CancelReason == "" {
+		record.CancelReason = "user_canceled"
+	}
 	record.Result.Status = statusCanceled
-	record.Result.FinishReason = "canceled"
+	record.Result.FinishReason = record.CancelReason
 
 	if record.Cancel != nil {
 		record.Cancel()
@@ -137,11 +141,11 @@ func (r *Registry) Finish(modelHash string, experimentID string, result Experime
 
 	if record.CancelRequested && result.Status != statusFinished {
 		result.Status = statusCanceled
-		if result.FinishReason == "" {
-			result.FinishReason = "canceled"
-		}
-		if result.ErrorMessage == "" {
-			result.ErrorMessage = "experiment canceled"
+
+		if record.CancelReason != "" {
+			result.FinishReason = record.CancelReason
+		} else if result.FinishReason == "" {
+			result.FinishReason = "user_canceled"
 		}
 	}
 
@@ -218,4 +222,34 @@ type RegistrySnapshot struct {
 	TotalMemoryBytes    uint64
 	ReservedMemoryBytes uint64
 	ActiveExperiments   uint64
+}
+
+func (r *Registry) CancelAll(reason string) int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	count := 0
+
+	for _, record := range r.experiments {
+		if !isActiveStatus(record.Result.Status) {
+			continue
+		}
+
+		record.CancelRequested = true
+		if record.CancelReason == "" {
+			record.CancelReason = reason
+		}
+		record.Result.Status = statusCanceled
+		if record.Result.FinishReason == "" {
+			record.Result.FinishReason = record.CancelReason
+		}
+
+		if record.Cancel != nil {
+			record.Cancel()
+		}
+
+		count++
+	}
+
+	return count
 }

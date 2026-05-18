@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -49,6 +50,20 @@ func executeExperiment(ctx context.Context, cfg Config, store *S3Store, cache *M
 
 	cachedModel, err := cache.GetOrDownload(ctx, cfg.ModelHash, binaryKey, cfg.BinarySHA256)
 	if err != nil {
+		if errors.Is(ctx.Err(), context.Canceled) {
+			result.Status = statusCanceled
+			result.FinishReason = "user_canceled"
+			result.ErrorMessage = ""
+			return result
+		}
+
+		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			result.Status = statusFailed
+			result.FinishReason = "timeout"
+			result.ErrorMessage = "prepare binary: " + err.Error()
+			return result
+		}
+
 		result.ErrorMessage = "prepare binary: " + err.Error()
 		return result
 	}
@@ -97,7 +112,10 @@ func executeExperiment(ctx context.Context, cfg Config, store *S3Store, cache *M
 		} else {
 			metricsKey := fmt.Sprintf("models/%s/experiments/%s/metrics.csv", cfg.ModelHash, cfg.ExperimentID)
 
-			ref, uploadErr := store.PutFile(ctx, metricsKey, trace.Path(), "text/csv; charset=utf-8")
+			uploadCtx, cancelUpload := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancelUpload()
+
+			ref, uploadErr := store.PutFile(uploadCtx, metricsKey, trace.Path(), "text/csv; charset=utf-8")
 			if uploadErr != nil {
 				appendResultError(&result, "upload metrics csv: "+uploadErr.Error())
 			} else {
@@ -169,5 +187,8 @@ func appendResultError(result *ExperimentResult, message string) {
 	} else {
 		result.ErrorMessage += "; " + message
 	}
-	result.Status = statusFailed
+
+	if result.Status != statusCanceled {
+		result.Status = statusFailed
+	}
 }

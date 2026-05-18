@@ -113,3 +113,28 @@ func (q *PendingQueue) Len() int {
 func queueKey(modelHash string, experimentID string) string {
 	return modelHash + ":" + experimentID
 }
+
+func (q *PendingQueue) Remove(modelHash string, experimentID string) bool {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+
+	key := queueKey(modelHash, experimentID)
+	if _, ok := q.index[key]; !ok {
+		return false
+	}
+
+	filtered := q.items[:0]
+
+	for _, item := range q.items {
+		if queueKey(item.ModelHash, item.ExperimentID) == key {
+			continue
+		}
+
+		filtered = append(filtered, item)
+	}
+
+	q.items = filtered
+	delete(q.index, key)
+
+	return true
+}

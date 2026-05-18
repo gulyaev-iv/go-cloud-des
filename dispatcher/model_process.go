@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os/exec"
@@ -202,8 +203,19 @@ func RunModelProcess(ctx context.Context, cfg ModelRunConfig) ModelRunResult {
 	waitErr := waitProcess(cmd, &result)
 
 	if ctx.Err() != nil {
-		result.Status = statusFailed
-		result.ErrorMessage = ctx.Err().Error()
+		if errors.Is(ctx.Err(), context.Canceled) {
+			result.Status = statusCanceled
+			result.FinishReason = "user_canceled"
+			result.ErrorMessage = ""
+		} else if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			result.Status = statusFailed
+			result.FinishReason = "timeout"
+			result.ErrorMessage = ctx.Err().Error()
+		} else {
+			result.Status = statusFailed
+			result.ErrorMessage = ctx.Err().Error()
+		}
+
 		finishRunResult(&result, startedAt, stderrCh)
 		return result
 	}

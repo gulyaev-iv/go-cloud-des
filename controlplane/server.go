@@ -67,7 +67,11 @@ func (s *ControlPlaneServer) GetExperiment(ctx context.Context, req *cpb.GetExpe
 }
 
 func (s *ControlPlaneServer) ListNodes(ctx context.Context, req *cpb.ListNodesRequest) (*cpb.ListNodesResponse, error) {
-	nodes := s.nodes.List(req.GetStatus())
+	nodes, evicted := s.nodes.List(req.GetStatus())
+
+	for _, nodeID := range evicted {
+		log.Printf("dispatcher node evicted by ttl: node_id=%s", nodeID)
+	}
 
 	return &cpb.ListNodesResponse{
 		Nodes: nodes,
@@ -174,4 +178,154 @@ func (s *ControlPlaneServer) ReportExperimentResult(ctx context.Context, req *cp
 		Ok:      true,
 		Message: "experiment result accepted",
 	}, nil
+}
+
+func (s *ControlPlaneServer) CancelExperiment(ctx context.Context, req *cpb.CancelExperimentRequest) (*cpb.CancelExperimentResponse, error) {
+	if req.GetModelHash() == "" {
+		return nil, status.Error(codes.InvalidArgument, "empty model_hash")
+	}
+	if req.GetExperimentId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "empty experiment_id")
+	}
+
+	record, found, err := s.repo.GetExperimentForCancel(ctx, req.GetModelHash(), req.GetExperimentId())
+	if err != nil {
+		return nil, err
+	}
+	if !found {
+		return nil, status.Error(codes.NotFound, "experiment not found")
+	}
+
+	switch record.Status {
+	case statusPending:
+		if s.scheduler != nil {
+			s.scheduler.Remove(record.ModelHash, record.ExperimentID)
+		}
+
+		canceled, err := s.repo.MarkPendingExperimentCanceled(ctx, record.ModelHash, record.ExperimentID)
+		if err != nil {
+			return nil, err
+		}
+
+		if canceled {
+			if err := s.repo.RefreshBatchStatus(ctx, record.BatchID); err != nil {
+				return nil, err
+			}
+
+			log.Printf(
+				"pending experiment canceled: batch_id=%s model_hash=%s experiment_id=%s",
+				record.BatchID,
+				record.ModelHash,
+				record.ExperimentID,
+			)
+
+			return &cpb.CancelExperimentResponse{
+				Canceled:     true,
+				ModelHash:    record.ModelHash,
+				ExperimentId: record.ExperimentID,
+				Status:       statusCanceled,
+				Message:      "pending experiment canceled",
+			}, nil
+		}
+
+		return &cpb.CancelExperimentResponse{
+			Canceled:     false,
+			ModelHash:    record.ModelHash,
+			ExperimentId: record.ExperimentID,
+			Status:       record.Status,
+			Message:      "experiment is no longer pending",
+		}, nil
+
+	case statusStarting, statusRunning:
+		if record.DispatcherNodeID == "" {
+			return &cpb.CancelExperimentResponse{
+				Canceled:     false,
+				ModelHash:    record.ModelHash,
+				ExperimentId: record.ExperimentID,
+				Status:       record.Status,
+				Message:      "experiment has no dispatcher node",
+			}, nil
+		}
+
+		node, ok := s.nodes.Get(record.DispatcherNodeID)
+		if !ok {
+			return &cpb.CancelExperimentResponse{
+				Canceled:     false,
+				ModelHash:    record.ModelHash,
+				ExperimentId: record.ExperimentID,
+				Status:       record.Status,
+				Message:      "dispatcher node is not available",
+			}, nil
+		}
+
+		client, err := NewDispatcherClient(node.GetAddress(), s.cfg.DispatcherRequestTimeout)
+		if err != nil {
+			return nil, err
+		}
+		defer func() {
+			if err := client.Close(); err != nil {
+				log.Printf("dispatcher client close error: node_id=%s address=%s error=%v", node.GetNodeId(), node.GetAddress(), err)
+			}
+		}()
+
+		resp, err := client.StopExperiment(ctx, &dpb.StopExperimentRequest{
+			ModelHash:    record.ModelHash,
+			ExperimentId: record.ExperimentID,
+		})
+		if err != nil {
+			return nil, err
+		}
+
+		log.Printf(
+			"active experiment cancel requested: node_id=%s model_hash=%s experiment_id=%s stopped=%t dispatcher_message=%s",
+			node.GetNodeId(),
+			record.ModelHash,
+			record.ExperimentID,
+			resp.GetStopped(),
+			resp.GetMessage(),
+		)
+
+		message := "cancellation requested; terminal status will be set when dispatcher reports result"
+		if !resp.GetStopped() {
+			message = resp.GetMessage()
+			if message == "" {
+				message = "dispatcher could not stop experiment"
+			}
+		}
+
+		return &cpb.CancelExperimentResponse{
+			Canceled:     false,
+			ModelHash:    record.ModelHash,
+			ExperimentId: record.ExperimentID,
+			Status:       record.Status,
+			Message:      message,
+		}, nil
+
+	case statusCanceled:
+		return &cpb.CancelExperimentResponse{
+			Canceled:     true,
+			ModelHash:    record.ModelHash,
+			ExperimentId: record.ExperimentID,
+			Status:       statusCanceled,
+			Message:      "experiment is already canceled",
+		}, nil
+
+	case statusFinished, statusFailed:
+		return &cpb.CancelExperimentResponse{
+			Canceled:     false,
+			ModelHash:    record.ModelHash,
+			ExperimentId: record.ExperimentID,
+			Status:       record.Status,
+			Message:      "experiment is already terminal",
+		}, nil
+
+	default:
+		return &cpb.CancelExperimentResponse{
+			Canceled:     false,
+			ModelHash:    record.ModelHash,
+			ExperimentId: record.ExperimentID,
+			Status:       record.Status,
+			Message:      "experiment cannot be canceled in current status",
+		}, nil
+	}
 }

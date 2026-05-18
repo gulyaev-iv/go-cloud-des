@@ -13,7 +13,10 @@ type Config struct {
 	DefaultGOOS   string
 	DefaultGOARCH string
 
-	NodeTTL time.Duration
+	NodeTTL                   time.Duration
+	NodeLostGracePeriod       time.Duration
+	NodeLostReconcileInterval time.Duration
+	MaxNodeFailures           int
 
 	SchedulerInterval        time.Duration
 	DispatcherRequestTimeout time.Duration
@@ -43,6 +46,9 @@ func parseConfig(args []string) (Config, error) {
 	fs.StringVar(&cfg.DefaultGOARCH, "default-goarch", "amd64", "default target GOARCH for generated model binaries")
 
 	fs.DurationVar(&cfg.NodeTTL, "node-ttl", 30*time.Second, "dispatcher node TTL after last heartbeat")
+	fs.DurationVar(&cfg.NodeLostGracePeriod, "node-lost-grace-period", 60*time.Second, "mark RUNNING/STARTING experiments as FAILED if their dispatcher is missing and they were not updated within this period")
+	fs.DurationVar(&cfg.NodeLostReconcileInterval, "node-lost-reconcile-interval", 30*time.Second, "how often to scan for experiments whose dispatcher node is lost")
+	fs.IntVar(&cfg.MaxNodeFailures, "max-node-failures", 3, "remove dispatcher node from registry after this many consecutive RPC failures")
 
 	fs.DurationVar(&cfg.SchedulerInterval, "scheduler-interval", time.Second, "scheduler loop interval")
 	fs.DurationVar(&cfg.DispatcherRequestTimeout, "dispatcher-request-timeout", 10*time.Second, "timeout for dispatcher gRPC requests")
@@ -77,6 +83,12 @@ func parseConfig(args []string) (Config, error) {
 	if cfg.NodeTTL <= 0 {
 		return cfg, fmt.Errorf("node-ttl must be > 0")
 	}
+	if cfg.NodeLostGracePeriod <= 0 {
+		return cfg, fmt.Errorf("node-lost-grace-period must be > 0")
+	}
+	if cfg.NodeLostReconcileInterval <= 0 {
+		return cfg, fmt.Errorf("node-lost-reconcile-interval must be > 0")
+	}
 	if cfg.SchedulerInterval <= 0 {
 		return cfg, fmt.Errorf("scheduler-interval must be > 0")
 	}
@@ -103,6 +115,9 @@ func parseConfig(args []string) (Config, error) {
 	}
 	if cfg.CodegenRequestTimeout <= 0 {
 		return cfg, fmt.Errorf("codegen-request-timeout must be > 0")
+	}
+	if cfg.MaxNodeFailures <= 0 {
+		return cfg, fmt.Errorf("max-node-failures must be > 0")
 	}
 
 	return cfg, nil
