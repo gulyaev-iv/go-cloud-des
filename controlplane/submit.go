@@ -149,12 +149,8 @@ func normalizeSubmitRequest(req *cpb.SubmitExperimentBatchRequest) (string, []*N
 		return "", nil, fmt.Errorf("empty common config")
 	}
 
-	if err := validateStopRule(common.GetStopRule()); err != nil {
+	if err := validateCommonConfig(common); err != nil {
 		return "", nil, err
-	}
-
-	if len(req.GetExperiments()) == 0 {
-		return "", nil, fmt.Errorf("empty experiments")
 	}
 
 	batchID := strings.TrimSpace(req.GetBatchId())
@@ -162,9 +158,16 @@ func normalizeSubmitRequest(req *cpb.SubmitExperimentBatchRequest) (string, []*N
 		batchID = "batch-" + randomHex(16)
 	}
 
-	experiments := make([]*NormalizedExperiment, 0, len(req.GetExperiments()))
+	requestExperiments := req.GetExperiments()
+	if len(requestExperiments) == 0 {
+		requestExperiments = []*cpb.ExperimentParams{
+			{},
+		}
+	}
 
-	for i, experiment := range req.GetExperiments() {
+	experiments := make([]*NormalizedExperiment, 0, len(requestExperiments))
+
+	for i, experiment := range requestExperiments {
 		if experiment == nil {
 			return "", nil, fmt.Errorf("experiment %d is empty", i)
 		}
@@ -190,6 +193,28 @@ func normalizeSubmitRequest(req *cpb.SubmitExperimentBatchRequest) (string, []*N
 	}
 
 	return batchID, experiments, nil
+}
+
+func validateCommonConfig(common *cpb.ExperimentCommonConfig) error {
+	if common == nil {
+		return fmt.Errorf("empty common config")
+	}
+
+	if isEmptyStopRule(common.GetStopRule()) {
+		return nil
+	}
+
+	return validateStopRule(common.GetStopRule())
+}
+
+func isEmptyStopRule(rule *dpb.StopRule) bool {
+	if rule == nil {
+		return true
+	}
+
+	return strings.TrimSpace(rule.GetLeft()) == "" &&
+		strings.TrimSpace(rule.GetOp()) == "" &&
+		strings.TrimSpace(rule.GetRight()) == ""
 }
 
 func validateStopRule(rule *dpb.StopRule) error {

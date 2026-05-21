@@ -24,6 +24,10 @@ type ModelRunConfig struct {
 	Trace      *CSVTraceWriter
 
 	MemoryLimitBytes uint64
+
+	CgroupEnabled bool
+	CgroupRoot    string
+	CgroupParent  string
 }
 
 type ModelRunResult struct {
@@ -54,6 +58,28 @@ func RunModelProcess(ctx context.Context, cfg ModelRunConfig) ModelRunResult {
 
 	cmd := exec.CommandContext(ctx, cfg.BinaryPath)
 
+	var cg *ExperimentCgroup
+
+	if cfg.CgroupEnabled && cfg.MemoryLimitBytes > 0 {
+		var err error
+
+		cg, err = NewExperimentCgroup(ExperimentCgroupConfig{
+			Root:             cfg.CgroupRoot,
+			Parent:           cfg.CgroupParent,
+			ModelHash:        cfg.ModelHash,
+			ExperimentID:     cfg.ExperimentID,
+			MemoryLimitBytes: cfg.MemoryLimitBytes,
+		})
+		if err != nil {
+			result.ErrorMessage = "create cgroup: " + err.Error()
+			return result
+		}
+
+		defer func() {
+			_ = cg.Close()
+		}()
+	}
+
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		result.ErrorMessage = "stdin pipe: " + err.Error()
@@ -75,6 +101,25 @@ func RunModelProcess(ctx context.Context, cfg ModelRunConfig) ModelRunResult {
 	if err := cmd.Start(); err != nil {
 		result.ErrorMessage = "start process: " + err.Error()
 		return result
+	}
+
+	if cg != nil {
+		if err := cg.AddProcess(cmd.Process.Pid); err != nil {
+			result.ErrorMessage = "add process to cgroup: " + err.Error()
+
+			if cmd.Process != nil {
+				_ = cmd.Process.Kill()
+			}
+
+			startedAt := time.Now()
+			result.StartedAtUnixMS = startedAt.UnixMilli()
+
+			stderrCh := captureLimited(stderr, 64*1024)
+			waitProcess(cmd, &result)
+			finishRunResult(&result, startedAt, stderrCh, cg)
+
+			return result
+		}
 	}
 
 	startedAt := time.Now()
@@ -100,7 +145,7 @@ func RunModelProcess(ctx context.Context, cfg ModelRunConfig) ModelRunResult {
 			fail("process closed stdout before HELLO")
 		}
 		waitProcess(cmd, &result)
-		finishRunResult(&result, startedAt, stderrCh)
+		finishRunResult(&result, startedAt, stderrCh, cg)
 		return result
 	}
 
@@ -108,13 +153,13 @@ func RunModelProcess(ctx context.Context, cfg ModelRunConfig) ModelRunResult {
 	if err != nil {
 		fail(err.Error())
 		waitProcess(cmd, &result)
-		finishRunResult(&result, startedAt, stderrCh)
+		finishRunResult(&result, startedAt, stderrCh, cg)
 		return result
 	}
 	if helloHash != cfg.ModelHash {
 		fail(fmt.Sprintf("model hash mismatch: expected %s, got %s", cfg.ModelHash, helloHash))
 		waitProcess(cmd, &result)
-		finishRunResult(&result, startedAt, stderrCh)
+		finishRunResult(&result, startedAt, stderrCh, cg)
 		return result
 	}
 
@@ -123,21 +168,21 @@ func RunModelProcess(ctx context.Context, cfg ModelRunConfig) ModelRunResult {
 		fail("write model config: " + err.Error())
 		_ = stdin.Close()
 		waitProcess(cmd, &result)
-		finishRunResult(&result, startedAt, stderrCh)
+		finishRunResult(&result, startedAt, stderrCh, cg)
 		return result
 	}
 	if err := writer.Flush(); err != nil {
 		fail("flush model config: " + err.Error())
 		_ = stdin.Close()
 		waitProcess(cmd, &result)
-		finishRunResult(&result, startedAt, stderrCh)
+		finishRunResult(&result, startedAt, stderrCh, cg)
 		return result
 	}
 	_ = stdin.Close()
 
 	if !waitReady(scanner, fail) {
 		waitProcess(cmd, &result)
-		finishRunResult(&result, startedAt, stderrCh)
+		finishRunResult(&result, startedAt, stderrCh, cg)
 		return result
 	}
 
@@ -155,7 +200,7 @@ func RunModelProcess(ctx context.Context, cfg ModelRunConfig) ModelRunResult {
 			if err != nil {
 				fail("parse STAT: " + err.Error())
 				waitProcess(cmd, &result)
-				finishRunResult(&result, startedAt, stderrCh)
+				finishRunResult(&result, startedAt, stderrCh, cg)
 				return result
 			}
 
@@ -166,7 +211,7 @@ func RunModelProcess(ctx context.Context, cfg ModelRunConfig) ModelRunResult {
 				if err := cfg.Trace.WriteStat(stat); err != nil {
 					fail("write metrics csv: " + err.Error())
 					waitProcess(cmd, &result)
-					finishRunResult(&result, startedAt, stderrCh)
+					finishRunResult(&result, startedAt, stderrCh, cg)
 					return result
 				}
 			}
@@ -178,13 +223,13 @@ func RunModelProcess(ctx context.Context, cfg ModelRunConfig) ModelRunResult {
 		case strings.HasPrefix(line, "ERR "):
 			fail("model returned " + line)
 			waitProcess(cmd, &result)
-			finishRunResult(&result, startedAt, stderrCh)
+			finishRunResult(&result, startedAt, stderrCh, cg)
 			return result
 
 		default:
 			fail("unexpected model line: " + line)
 			waitProcess(cmd, &result)
-			finishRunResult(&result, startedAt, stderrCh)
+			finishRunResult(&result, startedAt, stderrCh, cg)
 			return result
 		}
 
@@ -196,7 +241,7 @@ func RunModelProcess(ctx context.Context, cfg ModelRunConfig) ModelRunResult {
 	if err := scanner.Err(); err != nil {
 		fail("read model stdout: " + err.Error())
 		waitProcess(cmd, &result)
-		finishRunResult(&result, startedAt, stderrCh)
+		finishRunResult(&result, startedAt, stderrCh, cg)
 		return result
 	}
 
@@ -216,14 +261,14 @@ func RunModelProcess(ctx context.Context, cfg ModelRunConfig) ModelRunResult {
 			result.ErrorMessage = ctx.Err().Error()
 		}
 
-		finishRunResult(&result, startedAt, stderrCh)
+		finishRunResult(&result, startedAt, stderrCh, cg)
 		return result
 	}
 
 	if waitErr != nil && result.ErrorMessage == "" {
 		result.Status = statusFailed
 		result.ErrorMessage = waitErr.Error()
-		finishRunResult(&result, startedAt, stderrCh)
+		finishRunResult(&result, startedAt, stderrCh, cg)
 		return result
 	}
 
@@ -232,7 +277,7 @@ func RunModelProcess(ctx context.Context, cfg ModelRunConfig) ModelRunResult {
 		if result.ErrorMessage == "" {
 			result.ErrorMessage = "process finished without END"
 		}
-		finishRunResult(&result, startedAt, stderrCh)
+		finishRunResult(&result, startedAt, stderrCh, cg)
 		return result
 	}
 
@@ -245,7 +290,7 @@ func RunModelProcess(ctx context.Context, cfg ModelRunConfig) ModelRunResult {
 		result.Status = statusFinished
 	}
 
-	finishRunResult(&result, startedAt, stderrCh)
+	finishRunResult(&result, startedAt, stderrCh, cg)
 	return result
 }
 
@@ -318,10 +363,23 @@ func waitProcess(cmd *exec.Cmd, result *ModelRunResult) error {
 	return err
 }
 
-func finishRunResult(result *ModelRunResult, startedAt time.Time, stderrCh <-chan string) {
+func finishRunResult(result *ModelRunResult, startedAt time.Time, stderrCh <-chan string, cg *ExperimentCgroup) {
 	finishedAt := time.Now()
 	result.FinishedAtUnixMS = finishedAt.UnixMilli()
 	result.DurationMS = finishedAt.Sub(startedAt).Milliseconds()
+
+	if cg != nil {
+		result.PeakMemoryBytes = cg.PeakMemoryBytes()
+
+		if cg.WasOOMKilled() && result.Status != statusCanceled && result.FinishReason != "timeout" {
+			result.Status = statusFailed
+			result.FinishReason = "memory_limit_exceeded"
+
+			if result.ErrorMessage == "" {
+				result.ErrorMessage = "model process exceeded cgroup memory limit"
+			}
+		}
+	}
 
 	select {
 	case tail := <-stderrCh:

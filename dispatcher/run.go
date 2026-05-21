@@ -88,6 +88,9 @@ func executeExperiment(ctx context.Context, cfg Config, store *S3Store, cache *M
 		MetricStep:       cfg.MetricStep,
 		Trace:            trace,
 		MemoryLimitBytes: cfg.MemoryLimitBytes,
+		CgroupEnabled:    cfg.CgroupEnabled,
+		CgroupRoot:       cfg.CgroupRoot,
+		CgroupParent:     cfg.CgroupParent,
 	})
 
 	result.Status = runResult.Status

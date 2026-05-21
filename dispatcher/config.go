@@ -23,6 +23,10 @@ type Config struct {
 	RunTimeout       time.Duration
 	MemoryLimitBytes uint64
 
+	CgroupEnabled bool
+	CgroupRoot    string
+	CgroupParent  string
+
 	S3Endpoint     string
 	S3AccessKey    string
 	S3SecretKey    string

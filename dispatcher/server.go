@@ -257,6 +257,10 @@ func (s *DispatcherServer) baseRunConfig() Config {
 	return Config{
 		WorkDir: s.cfg.WorkDir,
 
+		CgroupEnabled: s.cfg.CgroupEnabled,
+		CgroupRoot:    s.cfg.CgroupRoot,
+		CgroupParent:  s.cfg.CgroupParent,
+
 		S3Endpoint:     s.cfg.S3Endpoint,
 		S3AccessKey:    s.cfg.S3AccessKey,
 		S3SecretKey:    s.cfg.S3SecretKey,

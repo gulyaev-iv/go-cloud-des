@@ -25,8 +25,15 @@ type ServeConfig struct {
 	ControlPlaneAddr    string
 	ControlPlaneTimeout time.Duration
 
+	RegistrationAttempts      int
+	RegistrationRetryInterval time.Duration
+
 	Slots       uint64
 	MemoryBytes uint64
+
+	CgroupEnabled bool
+	CgroupRoot    string
+	CgroupParent  string
 
 	HeartbeatInterval time.Duration
 
@@ -82,6 +89,13 @@ func runServe(args []string) error {
 		return fmt.Errorf("connect controlplane: %w", err)
 	}
 
+	if err := registerNodeWithRetry(ctx, cfg, registry, cache, controlPlane); err != nil {
+		if closeErr := controlPlane.Close(); closeErr != nil {
+			log.Printf("controlplane client close error: %v", closeErr)
+		}
+		return err
+	}
+
 	reporter, err := NewReporter(cfg.ReportJournalDir, controlPlane, cfg.ReportRetryInterval, cfg.ReportSendTimeout)
 	if err != nil {
 		if closeErr := controlPlane.Close(); closeErr != nil {
@@ -118,7 +132,7 @@ func runServe(args []string) error {
 	}()
 
 	log.Printf(
-		"dispatcher started: node_id=%s listen=%s advertise=%s goos=%s goarch=%s slots=%d memory=%d journal_dir=%s drain_timeout=%s",
+		"dispatcher started: node_id=%s listen=%s advertise=%s goos=%s goarch=%s slots=%d memory=%d cgroup_enabled=%t cgroup_root=%s cgroup_parent=%s journal_dir=%s drain_timeout=%s",
 		cfg.NodeID,
 		cfg.ListenAddr,
 		cfg.AdvertiseAddr,
@@ -126,6 +140,9 @@ func runServe(args []string) error {
 		runtime.GOARCH,
 		cfg.Slots,
 		cfg.MemoryBytes,
+		cfg.CgroupEnabled,
+		cfg.CgroupRoot,
+		cfg.CgroupParent,
 		cfg.ReportJournalDir,
 		cfg.DrainTimeout,
 	)
@@ -184,8 +201,15 @@ func parseServeConfig(args []string) (ServeConfig, error) {
 	fs.StringVar(&cfg.ControlPlaneAddr, "control-plane-addr", "", "control plane gRPC address")
 	fs.DurationVar(&cfg.ControlPlaneTimeout, "control-plane-timeout", 5*time.Second, "control plane gRPC request timeout")
 
+	fs.IntVar(&cfg.RegistrationAttempts, "registration-attempts", 12, "max attempts to register dispatcher node in control plane before startup fails")
+	fs.DurationVar(&cfg.RegistrationRetryInterval, "registration-retry-interval", 5*time.Second, "interval between dispatcher registration attempts")
+
 	fs.Uint64Var(&cfg.Slots, "slots", 1, "execution slots")
 	fs.Uint64Var(&cfg.MemoryBytes, "memory-bytes", 0, "total memory available for experiments")
+
+	fs.BoolVar(&cfg.CgroupEnabled, "cgroup-enabled", false, "enable cgroups v2 memory limits for model processes")
+	fs.StringVar(&cfg.CgroupRoot, "cgroup-root", "/sys/fs/cgroup", "cgroups v2 mount root")
+	fs.StringVar(&cfg.CgroupParent, "cgroup-parent", "go-cloud-des", "parent cgroup name for dispatcher experiments")
 
 	fs.DurationVar(&cfg.HeartbeatInterval, "heartbeat-interval", 5*time.Second, "heartbeat interval")
 
@@ -224,11 +248,25 @@ func parseServeConfig(args []string) (ServeConfig, error) {
 	if cfg.ControlPlaneTimeout <= 0 {
 		return cfg, fmt.Errorf("control-plane-timeout must be > 0")
 	}
+	if cfg.RegistrationAttempts <= 0 {
+		return cfg, fmt.Errorf("registration-attempts must be > 0")
+	}
+	if cfg.RegistrationRetryInterval <= 0 {
+		return cfg, fmt.Errorf("registration-retry-interval must be > 0")
+	}
 	if cfg.Slots == 0 {
 		return cfg, fmt.Errorf("slots must be > 0")
 	}
 	if cfg.HeartbeatInterval <= 0 {
 		return cfg, fmt.Errorf("heartbeat-interval must be > 0")
+	}
+	if cfg.CgroupEnabled {
+		if cfg.CgroupRoot == "" {
+			return cfg, fmt.Errorf("empty cgroup-root")
+		}
+		if cfg.CgroupParent == "" {
+			return cfg, fmt.Errorf("empty cgroup-parent")
+		}
 	}
 	if cfg.WorkDir == "" {
 		return cfg, fmt.Errorf("empty work-dir")
@@ -249,11 +287,58 @@ func parseServeConfig(args []string) (ServeConfig, error) {
 	return cfg, nil
 }
 
-func heartbeatLoop(ctx context.Context, cfg ServeConfig, registry *Registry, cache *ModelCache, controlPlane *GRPCControlPlaneClient) {
-	if err := controlPlane.RegisterNode(ctx, nodeStatus(cfg, registry, cache)); err != nil {
-		log.Printf("controlplane register node failed: %v", err)
+func registerNodeWithRetry(ctx context.Context, cfg ServeConfig, registry *Registry, cache *ModelCache, controlPlane *GRPCControlPlaneClient) error {
+	var lastErr error
+
+	for attempt := 1; attempt <= cfg.RegistrationAttempts; attempt++ {
+		if err := controlPlane.RegisterNode(ctx, nodeStatus(cfg, registry, cache)); err != nil {
+			lastErr = err
+
+			log.Printf(
+				"controlplane register node failed: node_id=%s attempt=%d/%d retry_in=%s error=%v",
+				cfg.NodeID,
+				attempt,
+				cfg.RegistrationAttempts,
+				cfg.RegistrationRetryInterval,
+				err,
+			)
+
+			if attempt == cfg.RegistrationAttempts {
+				break
+			}
+
+			timer := time.NewTimer(cfg.RegistrationRetryInterval)
+
+			select {
+			case <-ctx.Done():
+				if !timer.Stop() {
+					<-timer.C
+				}
+				return ctx.Err()
+
+			case <-timer.C:
+			}
+
+			continue
+		}
+
+		log.Printf(
+			"controlplane node registration completed: node_id=%s attempts=%d",
+			cfg.NodeID,
+			attempt,
+		)
+
+		return nil
 	}
 
+	return fmt.Errorf(
+		"register dispatcher node in control plane failed after %d attempts: %w",
+		cfg.RegistrationAttempts,
+		lastErr,
+	)
+}
+
+func heartbeatLoop(ctx context.Context, cfg ServeConfig, registry *Registry, cache *ModelCache, controlPlane *GRPCControlPlaneClient) {
 	ticker := time.NewTicker(cfg.HeartbeatInterval)
 	defer ticker.Stop()
 

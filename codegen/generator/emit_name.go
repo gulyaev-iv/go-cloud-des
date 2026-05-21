@@ -39,14 +39,6 @@ func resourceGoName(resource *ResourceDesc) string {
 	return "resource_" + resource.Name
 }
 
-func resourceSeizeFuncName(resource *ResourceDesc) string {
-	return "func_seize_resource_" + resource.Name
-}
-
-func resourceReleaseFuncName(resource *ResourceDesc) string {
-	return "func_release_resource_" + resource.Name
-}
-
 func blockKindName(block *BlockDesc) string {
 	switch block.Params.(type) {
 	case *CreateParams:
