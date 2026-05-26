@@ -1,0 +1,272 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: go-cloud-des-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: go_cloud_des
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d go_cloud_des"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  minio:
+    image: minio/minio:latest
+    container_name: go-cloud-des-minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_data:/data
+
+  minio-init:
+    image: minio/mc:latest
+    container_name: go-cloud-des-minio-init
+    depends_on:
+      - minio
+    entrypoint: >
+      /bin/sh -c "
+        until mc alias set local http://minio:9000 minioadmin minioadmin; do
+          echo 'waiting for minio...';
+          sleep 2;
+        done;
+        mc mb --ignore-existing local/cloud-des-artifacts;
+        mc anonymous set none local/cloud-des-artifacts;
+      "
+
+  nats:
+    image: nats:2.10
+    container_name: go-cloud-des-nats
+    command: ["-js", "-sd", "/data"]
+    ports:
+      - "4222:4222"
+      - "8222:8222"
+    volumes:
+      - nats_data:/data
+
+  controlplane:
+    build:
+      context: .
+      dockerfile: docker/controlplane.Dockerfile
+    container_name: go-cloud-des-controlplane
+    depends_on:
+      postgres:
+        condition: service_healthy
+      nats:
+        condition: service_started
+      minio-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 8080"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 5s
+    command:
+      - "-listen-addr"
+      - "0.0.0.0:8080"
+      - "-database-url"
+      - "postgres://postgres:postgres@postgres:5432/go_cloud_des?sslmode=disable"
+      - "-default-goos"
+      - "linux"
+      - "-default-goarch"
+      - "amd64"
+      - "-node-ttl"
+      - "30s"
+      - "-node-lost-grace-period"
+      - "60s"
+      - "-node-lost-reconcile-interval"
+      - "30s"
+      - "-max-node-failures"
+      - "3"
+      - "-scheduler-interval"
+      - "1s"
+      - "-dispatcher-request-timeout"
+      - "10s"
+      - "-scale-out-after"
+      - "5s"
+      - "-scale-out-cooldown"
+      - "30s"
+      - "-nats-url"
+      - "nats://nats:4222"
+      - "-codegen-stream"
+      - "CODEGEN_TASKS"
+      - "-codegen-subject"
+      - "codegen.tasks"
+      - "-codegen-reply-prefix"
+      - "controlplane.codegen.reply"
+      - "-codegen-request-timeout"
+      - "180s"
+      - "-enable-reflection=true"
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+
+  codegen:
+    build:
+      context: .
+      dockerfile: docker/codegen.Dockerfile
+    container_name: go-cloud-des-codegen
+    depends_on:
+      controlplane:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+    command:
+      - "serve"
+      - "-workers"
+      - "4"
+      - "-nats-url"
+      - "nats://nats:4222"
+      - "-nats-stream"
+      - "CODEGEN_TASKS"
+      - "-nats-subject"
+      - "codegen.tasks"
+      - "-nats-consumer"
+      - "codegen-worker"
+      - "-nats-create-stream=false"
+      - "-artifact-store"
+      - "s3"
+      - "-s3-endpoint"
+      - "minio:9000"
+      - "-s3-access-key"
+      - "minioadmin"
+      - "-s3-secret-key"
+      - "minioadmin"
+      - "-s3-bucket"
+      - "cloud-des-artifacts"
+      - "-s3-use-ssl=false"
+      - "-s3-region"
+      - "ru-1"
+      - "-s3-create-bucket=false"
+      - "-module-dir"
+      - "/app/codegen"
+      - "-work-dir"
+      - "/data/codegen-work"
+      - "-default-goos"
+      - "linux"
+      - "-default-goarch"
+      - "amd64"
+      - "-build-timeout"
+      - "120s"
+      - "-keep-workdir=false"
+    volumes:
+      - codegen_work:/data/codegen-work
+    restart: unless-stopped
+
+  dispatcher:
+    build:
+      context: .
+      dockerfile: docker/dispatcher.Dockerfile
+    container_name: go-cloud-des-dispatcher
+    privileged: true
+    cgroup: host
+    depends_on:
+      controlplane:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+    command:
+      - "-node-id"
+      - "node-1"
+      - "-listen-addr"
+      - "0.0.0.0:9090"
+      - "-advertise-addr"
+      - "dispatcher:9090"
+      - "-control-plane-addr"
+      - "controlplane:8080"
+      - "-registration-attempts"
+      - "12"
+      - "-registration-retry-interval"
+      - "5s"
+      - "-slots"
+      - "2"
+      - "-memory-bytes"
+      - "4294967296"
+      - "-cgroup-enabled=true"
+      - "-cgroup-root"
+      - "/sys/fs/cgroup"
+      - "-cgroup-parent"
+      - "go-cloud-des"
+      - "-heartbeat-interval"
+      - "5s"
+      - "-work-dir"
+      - "/data/dispatcher-work"
+      - "-report-journal-dir"
+      - "/data/dispatcher-reports"
+      - "-report-retry-interval"
+      - "10s"
+      - "-report-send-timeout"
+      - "5s"
+      - "-drain-timeout"
+      - "60s"
+      - "-s3-endpoint"
+      - "minio:9000"
+      - "-s3-access-key"
+      - "minioadmin"
+      - "-s3-secret-key"
+      - "minioadmin"
+      - "-s3-bucket"
+      - "cloud-des-artifacts"
+      - "-s3-use-ssl=false"
+      - "-s3-region"
+      - "ru-1"
+      - "-s3-create-bucket=false"
+    ports:
+      - "9090:9090"
+    volumes:
+      - dispatcher_data:/data
+      - /sys/fs/cgroup:/sys/fs/cgroup:rw
+    restart: unless-stopped
+
+  webapi:
+    build:
+      context: .
+      dockerfile: docker/webapi.Dockerfile
+    container_name: go-cloud-des-webapi
+    depends_on:
+      controlplane:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+    command:
+      - "-listen-addr"
+      - "0.0.0.0:8081"
+      - "-control-plane-addr"
+      - "controlplane:8080"
+      - "-control-plane-timeout"
+      - "10s"
+      - "-s3-endpoint"
+      - "minio:9000"
+      - "-s3-access-key"
+      - "minioadmin"
+      - "-s3-secret-key"
+      - "minioadmin"
+      - "-s3-bucket"
+      - "cloud-des-artifacts"
+      - "-s3-use-ssl=false"
+      - "-s3-region"
+      - "ru-1"
+      - "-enable-cors=true"
+      - "-cors-allow-origin"
+      - "*"
+    ports:
+      - "8081:8081"
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  minio_data:
+  nats_data:
+  codegen_work:
+  dispatcher_data:
